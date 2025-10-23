@@ -45,6 +45,13 @@ For more information about additional options, use the `--help` argument.
 > Lada writes the restored video to a temporary file before combining it with the audio stream from the original file and saving it to the selected destination.
 > You can overwrite [the default location](https://docs.python.org/3/library/tempfile.html#tempfile.gettempdir) by setting the `TMPDIR` environment variable to another location of you choice.
 
+New: Temporary directory & frame-rate options
+-------------------------------------------
+
+- The GUI exposes a Temporary directory preference (Preferences → Export) which overrides the system temp for GUI exports.
+- The CLI accepts `--temp-dir` and `--frame-rate-mode` (`auto`, `cfr`, `vfr`) for parity with the GUI. When `cfr` is chosen, ffmpeg is called with `-vsync cfr` during the final combine step to preserve a constant frame rate in the output container.
+
+
 ## Restoration options
 
 Lada utilizes specialized models for the two main steps of the processing pipeline: Detection and Restoration. You can choose different models for each task.
