@@ -52,6 +52,9 @@ def is_output_container_compatible_with_input_audio_codec(audio_codec: str, outp
         output_container_format = "mp4"
     elif file_extension == '.mkv':
         output_container_format = "matroska"
+    elif file_extension in ('.ts', '.mpeg', '.mpg'):
+        # MPEG-TS container
+        output_container_format = "mpegts"
     else:
         logger.info(f"Couldn't determine video container format based on file extension: {file_extension}")
         return False
