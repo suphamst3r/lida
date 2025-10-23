@@ -39,6 +39,11 @@ class Config(GObject.Object):
         'temp_dir': None,
         'debug_mode': False,
         'export_frame_rate_mode': 'auto',
+        'post_export_close': False,
+        'post_export_shutdown': False,
+        'post_export_confirm_shutdown': True,
+        'post_export_sound': None,
+        'post_export_commands': None,
     }
 
     def __init__(self, style_manager: Adw.StyleManager):
@@ -60,6 +65,11 @@ class Config(GObject.Object):
         self._temp_dir = self._defaults['temp_dir']
         self._debug_mode = self._defaults['debug_mode']
         self._export_frame_rate_mode = self._defaults['export_frame_rate_mode']
+    self._post_export_close = self._defaults['post_export_close']
+    self._post_export_shutdown = self._defaults['post_export_shutdown']
+    self._post_export_confirm_shutdown = self._defaults['post_export_confirm_shutdown']
+    self._post_export_sound = self._defaults['post_export_sound']
+    self._post_export_commands = self._defaults['post_export_commands']
         self.save_lock = threading.Lock()
         self._style_manager = style_manager
 
@@ -206,6 +216,50 @@ class Config(GObject.Object):
         self.save()
 
     @GObject.Property()
+    def post_export_close(self):
+        return self._post_export_close
+
+    @post_export_close.setter
+    def post_export_close(self, value):
+        if value == self._post_export_close:
+            return
+        self._post_export_close = bool(value)
+        self.save()
+
+    @GObject.Property()
+    def post_export_shutdown(self):
+        return self._post_export_shutdown
+
+    @post_export_shutdown.setter
+    def post_export_shutdown(self, value):
+        if value == self._post_export_shutdown:
+            return
+        self._post_export_shutdown = bool(value)
+        self.save()
+
+    @GObject.Property()
+    def post_export_sound(self):
+        return self._post_export_sound
+
+    @post_export_sound.setter
+    def post_export_sound(self, value):
+        if value == self._post_export_sound:
+            return
+        self._post_export_sound = value
+        self.save()
+
+    @GObject.Property()
+    def post_export_commands(self):
+        return self._post_export_commands
+
+    @post_export_commands.setter
+    def post_export_commands(self, value):
+        if value == self._post_export_commands:
+            return
+        self._post_export_commands = value
+        self.save()
+
+    @GObject.Property()
     def export_codec(self):
         return self._export_codec
 
@@ -349,6 +403,11 @@ class Config(GObject.Object):
             'temp_dir': self._temp_dir,
             'debug_mode': self._debug_mode,
             'export_frame_rate_mode': self._export_frame_rate_mode,
+            'post_export_close': self._post_export_close,
+            'post_export_shutdown': self._post_export_shutdown,
+            'post_export_confirm_shutdown': self._post_export_confirm_shutdown,
+            'post_export_sound': self._post_export_sound,
+            'post_export_commands': self._post_export_commands,
         }
 
     def get_default_value(self, key):

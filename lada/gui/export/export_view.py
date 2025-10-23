@@ -5,10 +5,12 @@ import tempfile
 import threading
 import time
 import traceback
+import shutil
 
 from gi.repository import Gtk, GObject, Gio, Adw, GLib
 
 from lada import LOG_LEVEL
+from lada import _
 from lada.gui import utils
 from lada.gui.config.config import Config
 from lada.gui.config.no_gpu_banner import NoGpuBanner
@@ -485,6 +487,11 @@ class ExportView(Gtk.Widget):
                         progress.complete()
                         self.emit('video-export-progress', progress)
                         self.emit('video-export-finished')
+                        # perform post-export actions configured by the user
+                        try:
+                            self.perform_post_export_actions()
+                        except Exception as e:
+                            logger.exception(f"Error performing post-export actions: {e}")
                     GLib.idle_add(on_success)
                 else:
                     if os.path.exists(video_tmp_file_output_path):
@@ -536,3 +543,85 @@ class ExportView(Gtk.Widget):
 
     def close(self):
         self.stop_requested = True
+
+    def perform_post_export_actions(self):
+        if not self._config:
+            return
+        import platform
+        import subprocess
+        # run commands
+        cmds = self._config.post_export_commands
+        if cmds:
+            for cmd in str(cmds).split(';'):
+                cmd = cmd.strip()
+                if not cmd:
+                    continue
+                try:
+                    subprocess.Popen(cmd, shell=True)
+                except Exception:
+                    logger.exception(f"Failed to run post-export command: {cmd}")
+        # play sound
+        sound = self._config.post_export_sound
+        if sound:
+            try:
+                # Try simple cross-platform approaches
+                if platform.system() == 'Windows':
+                    # use powershell PlaySound if available
+                    subprocess.Popen(["powershell", "-c", f"(New-Object Media.SoundPlayer '{sound}').PlaySync();"], shell=False)
+                else:
+                    # try aplay or paplay or afplay
+                    for player in ("paplay", "aplay", "afplay", "ffplay"):
+                        try:
+                            if shutil.which(player):
+                                if player == 'ffplay':
+                                    subprocess.Popen([player, '-nodisp', '-autoexit', sound])
+                                else:
+                                    subprocess.Popen([player, sound])
+                                break
+                        except Exception:
+                            continue
+            except Exception:
+                logger.exception("Failed to play post-export sound")
+        # shutdown
+        if self._config.post_export_shutdown:
+            try:
+                # If user requested confirmation show a dialog and abort shutdown if they cancel
+                confirm = True
+                try:
+                    confirm_pref = getattr(self._config, 'post_export_confirm_shutdown', True)
+                except Exception:
+                    confirm_pref = True
+                if confirm_pref:
+                    def on_response(dialog, response):
+                        dialog.user_response = response
+                        dialog.destroy()
+                    md = Gtk.MessageDialog(transient_for=self.get_root(), modal=True, message_type=Gtk.MessageType.QUESTION,
+                                           buttons=Gtk.ButtonsType.YES_NO, text=_('Shutdown computer?'))
+                    md.format_secondary_text(_('Do you want to shutdown the computer now?'))
+                    md.user_response = None
+                    md.connect('response', on_response)
+                    md.show()
+                    # Wait for dialog to close; run nested main loop until user responded
+                    while md.user_response is None:
+                        time.sleep(0.05)
+                    if md.user_response != Gtk.ResponseType.YES:
+                        confirm = False
+                if not confirm:
+                    logger.info('User cancelled post-export shutdown')
+                else:
+                    if platform.system() == 'Windows':
+                        subprocess.Popen(["shutdown", "/s", "/t", "10"])  # 10s delay
+                    else:
+                        subprocess.Popen(["shutdown", "-h", "now"])  # may require sudo
+            except Exception:
+                logger.exception("Failed to initiate shutdown")
+        # close application
+        if self._config.post_export_close:
+            try:
+                # close top-level window
+                GLib.idle_add(lambda: self.get_root().close())
+            except Exception:
+                try:
+                    GLib.idle_add(lambda: Gtk.main_quit())
+                except Exception:
+                    pass

@@ -41,6 +41,11 @@ class ConfigSidebar(Gtk.Box):
     toggle_button_initial_view_export: Gtk.ToggleButton = Gtk.Template.Child()
     entry_row_custom_ffmpeg_encoder_options: Adw.EntryRow = Gtk.Template.Child()
     check_button_show_mosaic_detections: Gtk.CheckButton = Gtk.Template.Child()
+    check_button_post_export_close: Gtk.CheckButton = Gtk.Template.Child()
+    check_button_post_export_shutdown: Gtk.CheckButton = Gtk.Template.Child()
+    check_button_post_export_confirm_shutdown: Gtk.CheckButton = Gtk.Template.Child()
+    entry_row_post_export_sound: Adw.EntryRow = Gtk.Template.Child()
+    entry_row_post_export_commands: Adw.EntryRow = Gtk.Template.Child()
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -134,6 +139,15 @@ class ConfigSidebar(Gtk.Box):
             self.action_row_temp_dir.set_subtitle(_("Use system temp"))
 
         self.check_button_debug_mode.set_active(bool(config.debug_mode))
+        # init post-export actions
+        try:
+            self.check_button_post_export_close.set_active(bool(getattr(config, 'post_export_close', False)))
+            self.check_button_post_export_shutdown.set_active(bool(getattr(config, 'post_export_shutdown', False)))
+            self.check_button_post_export_confirm_shutdown.set_active(bool(getattr(config, 'post_export_confirm_shutdown', True)))
+            self.entry_row_post_export_sound.set_text(str(getattr(config, 'post_export_sound', '') or ''))
+            self.entry_row_post_export_commands.set_text(str(getattr(config, 'post_export_commands', '') or ''))
+        except Exception:
+            pass
         # if debug mode is enabled in config, open the debug console
         if config.debug_mode:
             try:
@@ -354,6 +368,31 @@ class ConfigSidebar(Gtk.Box):
     @skip_if_uninitialized
     def check_button_show_mosaic_detections_callback(self, check_button):
         self._config.show_mosaic_detections = self.check_button_show_mosaic_detections.props.active
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def entry_row_post_export_sound_changed_callback(self, entry_row):
+        self._config.post_export_sound = self.entry_row_post_export_sound.get_text() or None
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def entry_row_post_export_commands_changed_callback(self, entry_row):
+        self._config.post_export_commands = self.entry_row_post_export_commands.get_text() or None
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def check_button_post_export_close_toggled_callback(self, check_button):
+        self._config.post_export_close = self.check_button_post_export_close.get_active()
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def check_button_post_export_shutdown_toggled_callback(self, check_button):
+        self._config.post_export_shutdown = self.check_button_post_export_shutdown.get_active()
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def check_button_post_export_confirm_shutdown_toggled_callback(self, check_button):
+        self._config.post_export_confirm_shutdown = self.check_button_post_export_confirm_shutdown.get_active()
 
     def set_file_name_pattern_row_styles(self):
         is_valid = validate_file_name_pattern(self.entry_row_file_name_pattern.get_text())

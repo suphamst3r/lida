@@ -170,6 +170,50 @@
                                     </object>
                                 </child>
                                 <child>
+                                    <object class="AdwPreferencesGroup">
+                                        <property name="title" translatable="true">Post-export actions</property>
+                                        <child>
+                                            <object class="AdwActionRow">
+                                                <property name="title" translatable="true">Close Lada after export</property>
+                                                <child type="prefix">
+                                                    <object class="GtkCheckButton" id="check_button_post_export_close"/>
+                                                </child>
+                                            </object>
+                                        </child>
+                                        <child>
+                                            <object class="AdwActionRow">
+                                                <property name="title" translatable="true">Shutdown PC after export</property>
+                                                <child type="prefix">
+                                                    <object class="GtkCheckButton" id="check_button_post_export_shutdown"/>
+                                                </child>
+                                            </object>
+                                        </child>
+                                        <child>
+                                            <object class="AdwActionRow">
+                                                <property name="title" translatable="true">Confirm before shutdown</property>
+                                                <property name="subtitle" translatable="true">Show a confirmation dialog before performing shutdown as a post-export action.</property>
+                                                <child type="prefix">
+                                                    <object class="GtkCheckButton" id="check_button_post_export_confirm_shutdown"/>
+                                                </child>
+                                            </object>
+                                        </child>
+                                        <child>
+                                            <object class="AdwEntryRow" id="entry_row_post_export_sound">
+                                                <property name="title" translatable="true">Play this sound after export (optional)</property>
+                                                <property name="subtitle" translatable="true">Path to a sound file to play after export finishes. Leave empty to disable.</property>
+                                                <signal name="changed" handler="entry_row_post_export_sound_changed_callback"/>
+                                            </object>
+                                        </child>
+                                        <child>
+                                            <object class="AdwEntryRow" id="entry_row_post_export_commands">
+                                                <property name="title" translatable="true">Run commands after export (optional)</property>
+                                                <property name="subtitle" translatable="true">Semicolon-separated commands to run after export completes. E.g. "echo done; C:\\scripts\\notify.bat"</property>
+                                                <signal name="changed" handler="entry_row_post_export_commands_changed_callback"/>
+                                            </object>
+                                        </child>
+                                    </object>
+                                </child>
+                                <child>
                                     <object class="AdwEntryRow" id="entry_row_custom_ffmpeg_encoder_options">
                                         <property name="title" translatable="true">Custom FFmpeg encoder options (Optional).&#xA;Example: &lt;span background=&quot;#D3D3D350&quot;&gt;&lt;tt&gt;-rc-lookahead 32 -rc vbr_hq&lt;/tt&gt;&lt;/span&gt;</property>
                                         <property name="tooltip-text" translatable="true">FFmpeg Codecs Documentation:&#xA;https://ffmpeg.org/ffmpeg-codecs.html</property>
