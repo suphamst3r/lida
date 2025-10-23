@@ -32,6 +32,14 @@
                             </object>
                         </child>
                         <child type="start">
+                            <object class="GtkButton" id="button_resize_real">
+                                <property name="icon-name">zoom-original-symbolic</property>
+                                <property name="tooltip-text" translatable="true">Resize player to video resolution</property>
+                                <property name="sensitive">True</property>
+                                <signal name="clicked" handler="button_resize_real_callback"/>
+                            </object>
+                        </child>
+                        <child type="start">
                             <object class="HeaderbarFilesDropDown" id="drop_down_files"/>
                         </child>
                         <child type="end">

@@ -57,6 +57,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.connect("close-request", self.close)
         self.file_selection_view.connect("files-selected", lambda obj, files: self.on_files_selected(files))
         self.preview_view.connect("toggle-fullscreen-requested", lambda *args: self.on_toggle_fullscreen())
+    # handle requests from preview view to resize window to native video resolution
+    self.preview_view.connect("request-native-resize", lambda obj, paintable, playback_controls, header_bar: self.on_window_resize_requested(obj, paintable, playback_controls, header_bar))
         self.preview_view.connect("window-resize-requested", self.on_window_resize_requested)
         self.connect("notify::fullscreened", lambda object, spec: self.on_fullscreened(object.get_property(spec.name)))
 
