@@ -56,6 +56,8 @@ def setup_argparser() -> argparse.ArgumentParser:
     export.add_argument('--preset', type=str, default=None, help=_('Encoder preset. Mostly affects file-size and speed. (default: %(default)s)'))
     export.add_argument('--moov-front',  default=False, action=argparse.BooleanOptionalAction, help=_("Sets ffmpeg mov flags 'frag_keyframe+empty_moov+faststart'. Enables playing the output video while it's being written (default: %(default)s)"))
     export.add_argument('--custom-encoder-options', type=str, help=_("Pass arbitrary encoder options. Pass it like you'd specify them using ffmpeg. For example: --custom-encoder-options \"-rc-lookahead 32 -rc vbr_hq\". Official FFmpeg Codecs Documentation: https://ffmpeg.org/ffmpeg-codecs.html"))
+    export.add_argument('--temp-dir', type=str, default=None, help=_('Directory to use for temporary export files (overrides system temp).'))
+    export.add_argument('--frame-rate-mode', type=str, choices=['auto', 'cfr', 'vfr'], default='auto', help=_('Frame rate mode for exported video: auto, cfr (constant), or vfr (variable).'))
 
     group_restoration = parser.add_argument_group(_('Mosaic Restoration'))
     group_restoration.add_argument('--mosaic-restoration-model', type=str, default="basicvsrpp", help=_("Model used to restore mosaic clips (default: %(default)s)"))
@@ -71,13 +73,15 @@ def setup_argparser() -> argparse.ArgumentParser:
     return parser
 
 def process_video_file(input_path: str, output_path: str, device, mosaic_restoration_model, mosaic_detection_model,
-                       mosaic_restoration_model_name, preferred_pad_mode, max_clip_length, codec, crf, moov_front, preset, custom_encoder_options):
+                       mosaic_restoration_model_name, preferred_pad_mode, max_clip_length, codec, crf, moov_front, preset, custom_encoder_options,
+                       temp_dir: str = None, frame_rate_mode: str = 'auto'):
     video_metadata = get_video_meta_data(input_path)
 
     frame_restorer = FrameRestorer(device, input_path, max_clip_length, mosaic_restoration_model_name,
                  mosaic_detection_model, mosaic_restoration_model, preferred_pad_mode)
     success = True
-    video_tmp_file_output_path = os.path.join(tempfile.gettempdir(), f"{os.path.basename(os.path.splitext(output_path)[0])}.tmp{os.path.splitext(output_path)[1]}")
+    base_tmp = temp_dir if temp_dir else tempfile.gettempdir()
+    video_tmp_file_output_path = os.path.join(base_tmp, f"{os.path.basename(os.path.splitext(output_path)[0])}.tmp{os.path.splitext(output_path)[1]}")
     pathlib.Path(output_path).parent.mkdir(exist_ok=True, parents=True)
     try:
         frame_restorer.start()
@@ -107,7 +111,7 @@ def process_video_file(input_path: str, output_path: str, device, mosaic_restora
 
     if success:
         print(_("Processing audio"))
-        audio_utils.combine_audio_video_files(video_metadata, video_tmp_file_output_path, output_path)
+        audio_utils.combine_audio_video_files(video_metadata, video_tmp_file_output_path, output_path, frame_rate_mode=frame_rate_mode)
     else:
         if os.path.exists(video_tmp_file_output_path):
             os.remove(video_tmp_file_output_path)
@@ -161,7 +165,8 @@ def main():
         try:
             process_video_file(input_path=input_path, output_path=output_path, device=args.device, mosaic_restoration_model=mosaic_restoration_model, mosaic_detection_model=mosaic_detection_model,
                                mosaic_restoration_model_name=args.mosaic_restoration_model, preferred_pad_mode=preferred_pad_mode, max_clip_length=args.max_clip_length,
-                               codec=args.codec, crf=args.crf, moov_front=args.moov_front, preset=args.preset, custom_encoder_options=args.custom_encoder_options)
+                               codec=args.codec, crf=args.crf, moov_front=args.moov_front, preset=args.preset, custom_encoder_options=args.custom_encoder_options,
+                               temp_dir=args.temp_dir, frame_rate_mode=args.frame_rate_mode)
         except KeyboardInterrupt:
             print(_("Received Ctrl-C, stopping restoration."))
             break
