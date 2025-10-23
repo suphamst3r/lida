@@ -44,6 +44,7 @@ class ConfigSidebar(Gtk.Box):
     check_button_post_export_close: Gtk.CheckButton = Gtk.Template.Child()
     check_button_post_export_shutdown: Gtk.CheckButton = Gtk.Template.Child()
     check_button_post_export_confirm_shutdown: Gtk.CheckButton = Gtk.Template.Child()
+    spin_row_post_export_shutdown_delay: Adw.SpinRow = Gtk.Template.Child()
     entry_row_post_export_sound: Adw.EntryRow = Gtk.Template.Child()
     entry_row_post_export_commands: Adw.EntryRow = Gtk.Template.Child()
 
@@ -144,6 +145,10 @@ class ConfigSidebar(Gtk.Box):
             self.check_button_post_export_close.set_active(bool(getattr(config, 'post_export_close', False)))
             self.check_button_post_export_shutdown.set_active(bool(getattr(config, 'post_export_shutdown', False)))
             self.check_button_post_export_confirm_shutdown.set_active(bool(getattr(config, 'post_export_confirm_shutdown', True)))
+            try:
+                self.spin_row_post_export_shutdown_delay.set_value(int(getattr(config, 'post_export_shutdown_delay', 10)))
+            except Exception:
+                pass
             self.entry_row_post_export_sound.set_text(str(getattr(config, 'post_export_sound', '') or ''))
             self.entry_row_post_export_commands.set_text(str(getattr(config, 'post_export_commands', '') or ''))
         except Exception:
@@ -393,6 +398,14 @@ class ConfigSidebar(Gtk.Box):
     @skip_if_uninitialized
     def check_button_post_export_confirm_shutdown_toggled_callback(self, check_button):
         self._config.post_export_confirm_shutdown = self.check_button_post_export_confirm_shutdown.get_active()
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def spin_row_post_export_shutdown_delay_selected_callback(self, spin_row, value):
+        try:
+            self._config.post_export_shutdown_delay = int(spin_row.get_property('value'))
+        except Exception:
+            pass
 
     def set_file_name_pattern_row_styles(self):
         is_valid = validate_file_name_pattern(self.entry_row_file_name_pattern.get_text())

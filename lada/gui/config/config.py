@@ -42,6 +42,7 @@ class Config(GObject.Object):
         'post_export_close': False,
         'post_export_shutdown': False,
         'post_export_confirm_shutdown': True,
+        'post_export_shutdown_delay': 10,
         'post_export_sound': None,
         'post_export_commands': None,
     }
@@ -68,6 +69,7 @@ class Config(GObject.Object):
         self._post_export_close = self._defaults['post_export_close']
         self._post_export_shutdown = self._defaults['post_export_shutdown']
         self._post_export_confirm_shutdown = self._defaults['post_export_confirm_shutdown']
+    self._post_export_shutdown_delay = self._defaults['post_export_shutdown_delay']
         self._post_export_sound = self._defaults['post_export_sound']
         self._post_export_commands = self._defaults['post_export_commands']
         self.save_lock = threading.Lock()
@@ -249,6 +251,21 @@ class Config(GObject.Object):
         self.save()
 
     @GObject.Property()
+    def post_export_shutdown_delay(self):
+        return self._post_export_shutdown_delay
+
+    @post_export_shutdown_delay.setter
+    def post_export_shutdown_delay(self, value):
+        try:
+            value_int = int(value)
+        except Exception:
+            value_int = self._post_export_shutdown_delay
+        if value_int == self._post_export_shutdown_delay:
+            return
+        self._post_export_shutdown_delay = value_int
+        self.save()
+
+    @GObject.Property()
     def post_export_sound(self):
         return self._post_export_sound
 
@@ -417,6 +434,7 @@ class Config(GObject.Object):
             'post_export_close': self._post_export_close,
             'post_export_shutdown': self._post_export_shutdown,
             'post_export_confirm_shutdown': self._post_export_confirm_shutdown,
+            'post_export_shutdown_delay': self._post_export_shutdown_delay,
             'post_export_sound': self._post_export_sound,
             'post_export_commands': self._post_export_commands,
         }

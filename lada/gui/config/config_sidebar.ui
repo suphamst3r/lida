@@ -198,6 +198,21 @@
                                             </object>
                                         </child>
                                         <child>
+                                            <object class="AdwSpinRow" id="spin_row_post_export_shutdown_delay">
+                                                <property name="title" translatable="true">Shutdown delay (seconds)</property>
+                                                <property name="subtitle" translatable="true">Number of seconds to wait before performing shutdown. Use this to give you time to cancel.</property>
+                                                <property name="adjustment">
+                                                    <object class="GtkAdjustment">
+                                                        <property name="lower">1</property>
+                                                        <property name="upper">600</property>
+                                                        <property name="step-increment">1</property>
+                                                        <property name="value">10</property>
+                                                    </object>
+                                                </property>
+                                                <signal name="notify::value" handler="spin_row_post_export_shutdown_delay_selected_callback"/>
+                                            </object>
+                                        </child>
+                                        <child>
                                             <object class="AdwEntryRow" id="entry_row_post_export_sound">
                                                 <property name="title" translatable="true">Play this sound after export (optional)</property>
                                                 <property name="subtitle" translatable="true">Path to a sound file to play after export finishes. Leave empty to disable.</property>
