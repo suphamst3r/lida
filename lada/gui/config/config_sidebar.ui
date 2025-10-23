@@ -115,13 +115,53 @@
                                     </object>
                                 </child>
                                 <child>
+                                    <object class="AdwComboRow" id="combo_row_export_frame_rate_mode">
+                                        <property name="title" translatable="true">Frame rate mode</property>
+                                        <property name="subtitle" translatable="true">Choose whether exported video should use constant frame rate (CFR) or variable (VFR). Auto chooses default.</property>
+                                        <property name="model">
+                                            <object class="GtkStringList">
+                                                <items>
+                                                    <item translatable="true">Auto</item>
+                                                    <item translatable="true">Constant (CFR)</item>
+                                                    <item translatable="true">Variable (VFR)</item>
+                                                </items>
+                                            </object>
+                                        </property>
+                                        <signal name="notify::selected" handler="combo_row_export_frame_rate_mode_selected_callback"/>
+                                    </object>
+                                </child>
+                                <child>
+                                    <object class="AdwActionRow" id="action_row_temp_dir">
+                                        <property name="title" translatable="true">Temporary directory</property>
+                                        <property name="subtitle" translatable="true">Folder used for temporary export files. Leave empty to use system temp.</property>
+                                        <child type="suffix">
+                                            <object class="GtkButton" id="button_select_temp_dir">
+                                                <property name="icon-name">folder-open-symbolic</property>
+                                                <signal name="clicked" handler="button_select_temp_dir_callback"/>
+                                            </object>
+                                        </child>
+                                    </object>
+                                </child>
+                                <child>
+                                    <object class="AdwActionRow">
+                                        <property name="title" translatable="true">Debug Mode</property>
+                                        <property name="subtitle" translatable="true">When enabled, show verbose console and system/GPU stats.</property>
+                                        <child type="prefix">
+                                            <object class="GtkCheckButton" id="check_button_debug_mode">
+                                                <property name="active">false</property>
+                                                <signal name="toggled" handler="check_button_debug_mode_toggled_callback"/>
+                                            </object>
+                                        </child>
+                                    </object>
+                                </child>
+                                <child>
                                     <object class="AdwSpinRow" id="spin_row_export_crf">
                                         <property name="title" translatable="true">CRF (Constant Rate Factor)</property>
                                         <property name="subtitle" translatable="true">Quality setting of the video encoder. Lower values will result in higher quality but larger file sizes.</property>
                                         <property name="adjustment">
                                             <object class="GtkAdjustment">
                                                 <property name="lower">0</property>
-                                                <property name="upper">40</property>
+                                                <property name="upper">100</property>
                                                 <property name="step-increment">1</property>
                                             </object>
                                         </property>

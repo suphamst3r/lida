@@ -404,7 +404,13 @@ class ExportView(Gtk.Widget):
 
             progress_update_step_size = 100
             success = True
-            video_tmp_file_output_path = os.path.join(tempfile.gettempdir(),f"{os.path.basename(os.path.splitext(restore_file_path)[0])}.tmp{os.path.splitext(restore_file_path)[1]}")
+            base_tmp_dir = tempfile.gettempdir()
+            try:
+                if self._config and getattr(self._config, 'temp_dir', None):
+                    base_tmp_dir = self._config.temp_dir
+            except Exception:
+                pass
+            video_tmp_file_output_path = os.path.join(base_tmp_dir, f"{os.path.basename(os.path.splitext(restore_file_path)[0])}.tmp{os.path.splitext(restore_file_path)[1]}")
             try:
                 if self.resume_info:
                     start_ns = self.resume_info.get_resume_timestamp_ns()
@@ -469,7 +475,11 @@ class ExportView(Gtk.Widget):
                 GLib.idle_add(lambda: self.emit('video-export-paused'))
             else:
                 if success:
-                    audio_utils.combine_audio_video_files(video_metadata, video_tmp_file_output_path, restore_file_path)
+                    try:
+                        frame_rate_mode = getattr(self._config, 'export_frame_rate_mode', 'auto') if self._config is not None else 'auto'
+                    except Exception:
+                        frame_rate_mode = 'auto'
+                    audio_utils.combine_audio_video_files(video_metadata, video_tmp_file_output_path, restore_file_path, frame_rate_mode=frame_rate_mode)
                     def on_success():
                         progress = self.progress_calculator.get_progress()
                         progress.complete()

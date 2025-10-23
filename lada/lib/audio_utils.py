@@ -10,7 +10,7 @@ from lada.lib import video_utils, os_utils
 
 logger = logging.getLogger(__name__)
 
-def combine_audio_video_files(av_video_metadata: video_utils.VideoMetadata, tmp_v_video_input_path, av_video_output_path):
+def combine_audio_video_files(av_video_metadata: video_utils.VideoMetadata, tmp_v_video_input_path, av_video_output_path, frame_rate_mode: str = 'auto'):
     audio_codec = get_audio_codec(av_video_metadata.video_file)
     if audio_codec:
         needs_audio_reencoding = not is_output_container_compatible_with_input_audio_codec(audio_codec, av_video_output_path)
@@ -22,6 +22,10 @@ def combine_audio_video_files(av_video_metadata: video_utils.VideoMetadata, tmp_
             delay_in_seconds = float(av_video_metadata.start_pts * av_video_metadata.time_base)
             cmd += ["-itsoffset", str(delay_in_seconds)]
         cmd += ["-i", tmp_v_video_input_path]
+        # Apply frame rate mode if requested
+        if frame_rate_mode == 'cfr':
+            # ensure constant frame rate on output
+            cmd += ["-vsync", "cfr"]
         if needs_audio_reencoding:
             cmd += ["-c:v", "copy"]
         else:

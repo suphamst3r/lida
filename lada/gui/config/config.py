@@ -34,6 +34,9 @@ class Config(GObject.Object):
         'mute_audio': False,
         'preview_buffer_duration': 0,
         'show_mosaic_detections': False,
+        'temp_dir': None,
+        'debug_mode': False,
+        'export_frame_rate_mode': 'auto',
     }
 
     def __init__(self, style_manager: Adw.StyleManager):
@@ -52,7 +55,9 @@ class Config(GObject.Object):
         self._mute_audio = self._defaults['mute_audio']
         self._preview_buffer_duration = self._defaults['preview_buffer_duration']
         self._show_mosaic_detections = self._defaults['show_mosaic_detections']
-
+        self._temp_dir = self._defaults['temp_dir']
+        self._debug_mode = self._defaults['debug_mode']
+        self._export_frame_rate_mode = self._defaults['export_frame_rate_mode']
         self.save_lock = threading.Lock()
         self._style_manager = style_manager
 
@@ -142,6 +147,39 @@ class Config(GObject.Object):
         if value == self._export_crf:
             return
         self._export_crf = value
+        self.save()
+
+    @GObject.Property()
+    def temp_dir(self):
+        return self._temp_dir
+
+    @temp_dir.setter
+    def temp_dir(self, value):
+        if value == self._temp_dir:
+            return
+        self._temp_dir = value
+        self.save()
+
+    @GObject.Property()
+    def debug_mode(self):
+        return self._debug_mode
+
+    @debug_mode.setter
+    def debug_mode(self, value):
+        if value == self._debug_mode:
+            return
+        self._debug_mode = value
+        self.save()
+
+    @GObject.Property()
+    def export_frame_rate_mode(self):
+        return self._export_frame_rate_mode
+
+    @export_frame_rate_mode.setter
+    def export_frame_rate_mode(self, value):
+        if value == self._export_frame_rate_mode:
+            return
+        self._export_frame_rate_mode = value
         self.save()
 
     @GObject.Property()
@@ -256,6 +294,9 @@ class Config(GObject.Object):
         self.mute_audio = self._defaults['mute_audio']
         self.preview_buffer_duration = self._defaults['preview_buffer_duration']
         self.show_mosaic_detections = self._defaults['show_mosaic_detections']
+        self.temp_dir = self._defaults['temp_dir']
+        self.debug_mode = self._defaults['debug_mode']
+        self.export_frame_rate_mode = self._defaults['export_frame_rate_mode']
         self.validate_and_set_device(self._defaults['device'])
         self.save()
 
@@ -282,6 +323,8 @@ class Config(GObject.Object):
             'mute_audio': self._mute_audio,
             'preview_buffer_duration': self._preview_buffer_duration,
             'show_mosaic_detections': self._show_mosaic_detections,
+            'temp_dir': self._temp_dir,
+            'debug_mode': self._debug_mode,
         }
 
     def get_default_value(self, key):

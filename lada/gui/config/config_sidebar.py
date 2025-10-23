@@ -22,10 +22,14 @@ class ConfigSidebar(Gtk.Box):
     combo_row_mosaic_detection_models = Gtk.Template.Child()
     spin_row_export_crf = Gtk.Template.Child()
     combo_row_export_codec = Gtk.Template.Child()
+    combo_row_export_frame_rate_mode = Gtk.Template.Child()
     spin_row_preview_buffer_duration = Gtk.Template.Child()
     spin_row_clip_max_duration = Gtk.Template.Child()
     switch_row_mute_audio = Gtk.Template.Child()
     preferences_page = Gtk.Template.Child()
+    action_row_temp_dir: Adw.ActionRow = Gtk.Template.Child()
+    button_select_temp_dir: Gtk.Button = Gtk.Template.Child()
+    check_button_debug_mode: Gtk.CheckButton = Gtk.Template.Child()
     light_color_scheme_button = Gtk.Template.Child()
     dark_color_scheme_button = Gtk.Template.Child()
     system_color_scheme_button = Gtk.Template.Child()
@@ -44,6 +48,7 @@ class ConfigSidebar(Gtk.Box):
         self.init_done = False
         self._show_playback_section = True
         self._show_export_section = True
+        self._debug_console = None
 
     def init_sidebar_from_config(self, config: Config):
         self.init_done = False
@@ -88,6 +93,13 @@ class ConfigSidebar(Gtk.Box):
         self.combo_row_export_codec.set_model(combo_row_export_codec_models_list)
         idx = codecs.index(config.export_codec)
         self.combo_row_export_codec.set_selected(idx)
+        # init frame rate mode
+        mode_map = {'auto':0, 'cfr':1, 'vfr':2}
+        selected_idx = mode_map.get(getattr(config, 'export_frame_rate_mode', 'auto'), 0)
+        try:
+            self.combo_row_export_frame_rate_mode.set_selected(selected_idx)
+        except Exception:
+            pass
 
         self.spin_row_export_crf.set_property('value', config.export_crf)
 
@@ -114,6 +126,23 @@ class ConfigSidebar(Gtk.Box):
         self.toggle_button_initial_view_export.set_active(config.initial_view == "export")
 
         self.entry_row_custom_ffmpeg_encoder_options.set_text(config.custom_ffmpeg_encoder_options)
+
+        # init temp dir and debug mode
+        if config.temp_dir:
+            self.action_row_temp_dir.set_subtitle(config.temp_dir)
+        else:
+            self.action_row_temp_dir.set_subtitle(_("Use system temp"))
+
+        self.check_button_debug_mode.set_active(bool(config.debug_mode))
+        # if debug mode is enabled in config, open the debug console
+        if config.debug_mode:
+            try:
+                from lada.gui.debug_console import DebugConsoleWindow
+                if not getattr(self, '_debug_console', None):
+                    self._debug_console = DebugConsoleWindow()
+                self._debug_console.present()
+            except Exception as e:
+                logger.exception(f"Failed to open debug console on init: {e}")
 
         self.init_done = True
 
@@ -260,6 +289,54 @@ class ConfigSidebar(Gtk.Box):
     @skip_if_uninitialized
     def entry_row_custom_ffmpeg_encoder_options_changed_callback(self, entry_row):
         self._config.custom_ffmpeg_encoder_options = self.entry_row_custom_ffmpeg_encoder_options.get_text()
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def combo_row_export_frame_rate_mode_selected_callback(self, combo_row, value):
+        selected = combo_row.get_property('selected_item').get_string()
+        mapping = {'Auto':'auto', 'Constant (CFR)':'cfr', 'Variable (VFR)':'vfr'}
+        # use title text to map to internal value
+        self._config.export_frame_rate_mode = mapping.get(selected, 'auto')
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def button_select_temp_dir_callback(self, button_clicked):
+        file_dialog = Gtk.FileDialog()
+        file_dialog.set_title(_("Select a temporary folder"))
+        def on_select_folder(_file_dialog, result):
+            try:
+                selected_folder: Gio.File = _file_dialog.select_folder_finish(result)
+                selected_folder_path = selected_folder.get_path()
+                self._config.temp_dir = selected_folder_path
+                self.action_row_temp_dir.set_subtitle(selected_folder_path)
+            except GLib.Error as error:
+                if error.message == "Dismissed by user":
+                    logger.debug("Temp dir selection cancelled: Dismissed by user")
+                else:
+                    logger.error(f"Error selecting temp dir: {error.message}")
+        file_dialog.select_folder(callback=on_select_folder)
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def check_button_debug_mode_toggled_callback(self, check_button):
+        active = check_button.get_active()
+        self._config.debug_mode = bool(active)
+        # open debug console when enabled
+        if active:
+            try:
+                from lada.gui.debug_console import DebugConsoleWindow
+                if not self._debug_console:
+                    self._debug_console = DebugConsoleWindow()
+                self._debug_console.present()
+            except Exception as e:
+                logger.exception(f"Failed to open debug console: {e}")
+        else:
+            try:
+                if self._debug_console:
+                    self._debug_console.close()
+                    self._debug_console = None
+            except Exception:
+                pass
 
     @Gtk.Template.Callback()
     @skip_if_uninitialized
