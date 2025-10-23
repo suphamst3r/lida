@@ -1,6 +1,8 @@
 import json
 import logging
 import threading
+import os
+import tempfile as _tempfile
 from enum import Enum
 from pathlib import Path
 
@@ -155,10 +157,31 @@ class Config(GObject.Object):
 
     @temp_dir.setter
     def temp_dir(self, value):
-        if value == self._temp_dir:
+        # Allow clearing the temp dir
+        if value is None or value == "":
+            if value == self._temp_dir:
+                return
+            self._temp_dir = None
+            self.save()
             return
-        self._temp_dir = value
-        self.save()
+
+        # Expand and validate the provided path. Try to create it and ensure it's writable.
+        p = Path(value).expanduser()
+        try:
+            if not p.exists():
+                p.mkdir(parents=True, exist_ok=True)
+            # test writing a temporary file
+            test_path = p.joinpath(f".lada_write_test_{os.getpid()}")
+            with open(test_path, 'w') as tf:
+                tf.write('0')
+            test_path.unlink()
+            # success
+            self._temp_dir = str(p)
+            self.save()
+        except Exception as e:
+            logger.error(f"Invalid temp_dir '{value}': {e}")
+            # raise so UI/CLI callers can present an error to the user
+            raise ValueError(f"Could not use temporary directory '{value}': {e}")
 
     @GObject.Property()
     def debug_mode(self):
@@ -325,6 +348,7 @@ class Config(GObject.Object):
             'show_mosaic_detections': self._show_mosaic_detections,
             'temp_dir': self._temp_dir,
             'debug_mode': self._debug_mode,
+            'export_frame_rate_mode': self._export_frame_rate_mode,
         }
 
     def get_default_value(self, key):

@@ -119,6 +119,19 @@ def process_video_file(input_path: str, output_path: str, device, mosaic_restora
 def main():
     argparser = setup_argparser()
     args = argparser.parse_args()
+    # Validate temp-dir CLI arg (try create and test write). If invalid, warn and fall back to system temp.
+    if getattr(args, 'temp_dir', None):
+        try:
+            p = pathlib.Path(args.temp_dir).expanduser()
+            if not p.exists():
+                p.mkdir(parents=True, exist_ok=True)
+            test_path = p.joinpath(f".lada_write_test_{os.getpid()}")
+            with open(test_path, 'w') as tf:
+                tf.write('0')
+            test_path.unlink()
+        except Exception as e:
+            print(f"Warning: --temp-dir '{args.temp_dir}' is not usable: {e}. Falling back to system temp.")
+            args.temp_dir = None
     if args.version:
         print("Lada: ", VERSION)
         sys.exit(0)

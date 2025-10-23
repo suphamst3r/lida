@@ -307,8 +307,20 @@ class ConfigSidebar(Gtk.Box):
             try:
                 selected_folder: Gio.File = _file_dialog.select_folder_finish(result)
                 selected_folder_path = selected_folder.get_path()
-                self._config.temp_dir = selected_folder_path
-                self.action_row_temp_dir.set_subtitle(selected_folder_path)
+                try:
+                    self._config.temp_dir = selected_folder_path
+                    self.action_row_temp_dir.set_subtitle(selected_folder_path)
+                except ValueError as e:
+                        # show inline error in subtitle and modal dialog; keep previous value
+                        try:
+                            self.action_row_temp_dir.set_subtitle(str(e))
+                        except Exception:
+                            pass
+                        md = Gtk.MessageDialog(transient_for=self.get_root(), modal=True, message_type=Gtk.MessageType.ERROR,
+                                               buttons=Gtk.ButtonsType.OK, text=_('Invalid Temporary Directory'))
+                        md.format_secondary_text(str(e))
+                        md.connect('response', lambda d, r: d.destroy())
+                        md.show()
             except GLib.Error as error:
                 if error.message == "Dismissed by user":
                     logger.debug("Temp dir selection cancelled: Dismissed by user")
