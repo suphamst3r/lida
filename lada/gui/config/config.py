@@ -65,11 +65,11 @@ class Config(GObject.Object):
         self._temp_dir = self._defaults['temp_dir']
         self._debug_mode = self._defaults['debug_mode']
         self._export_frame_rate_mode = self._defaults['export_frame_rate_mode']
-    self._post_export_close = self._defaults['post_export_close']
-    self._post_export_shutdown = self._defaults['post_export_shutdown']
-    self._post_export_confirm_shutdown = self._defaults['post_export_confirm_shutdown']
-    self._post_export_sound = self._defaults['post_export_sound']
-    self._post_export_commands = self._defaults['post_export_commands']
+        self._post_export_close = self._defaults['post_export_close']
+        self._post_export_shutdown = self._defaults['post_export_shutdown']
+        self._post_export_confirm_shutdown = self._defaults['post_export_confirm_shutdown']
+        self._post_export_sound = self._defaults['post_export_sound']
+        self._post_export_commands = self._defaults['post_export_commands']
         self.save_lock = threading.Lock()
         self._style_manager = style_manager
 
@@ -235,6 +235,17 @@ class Config(GObject.Object):
         if value == self._post_export_shutdown:
             return
         self._post_export_shutdown = bool(value)
+        self.save()
+
+    @GObject.Property()
+    def post_export_confirm_shutdown(self):
+        return self._post_export_confirm_shutdown
+
+    @post_export_confirm_shutdown.setter
+    def post_export_confirm_shutdown(self, value):
+        if value == self._post_export_confirm_shutdown:
+            return
+        self._post_export_confirm_shutdown = bool(value)
         self.save()
 
     @GObject.Property()

@@ -592,20 +592,60 @@ class ExportView(Gtk.Widget):
                 except Exception:
                     confirm_pref = True
                 if confirm_pref:
-                    def on_response(dialog, response):
-                        dialog.user_response = response
-                        dialog.destroy()
-                    md = Gtk.MessageDialog(transient_for=self.get_root(), modal=True, message_type=Gtk.MessageType.QUESTION,
-                                           buttons=Gtk.ButtonsType.YES_NO, text=_('Shutdown computer?'))
-                    md.format_secondary_text(_('Do you want to shutdown the computer now?'))
-                    md.user_response = None
-                    md.connect('response', on_response)
+                    countdown_seconds = 10
+                    md = Gtk.Dialog(transient_for=self.get_root(), modal=True)
+                    md.add_button(_('Cancel'), Gtk.ResponseType.CANCEL)
+                    md.set_default_size(360, 120)
+                    box = md.get_content_area()
+                    label = Gtk.Label(label=_('The system will shutdown in {n} seconds.').format(n=countdown_seconds))
+                    label.set_wrap(True)
+                    box.append(label)
                     md.show()
-                    # Wait for dialog to close; run nested main loop until user responded
-                    while md.user_response is None:
-                        time.sleep(0.05)
-                    if md.user_response != Gtk.ResponseType.YES:
-                        confirm = False
+
+                    data = {
+                        'remaining': countdown_seconds,
+                        'cancelled': False,
+                    }
+
+                    def on_dialog_response(dialog, response):
+                        if response == Gtk.ResponseType.CANCEL:
+                            data['cancelled'] = True
+                        try:
+                            dialog.destroy()
+                        except Exception:
+                            pass
+
+                    md.connect('response', on_dialog_response)
+
+                    def tick():
+                        if data['cancelled']:
+                            return False
+                        data['remaining'] -= 1
+                        if data['remaining'] <= 0:
+                            try:
+                                md.destroy()
+                            except Exception:
+                                pass
+                            # proceed with shutdown
+                            return False
+                        # update label
+                        label.set_text(_('The system will shutdown in {n} seconds.').format(n=data['remaining']))
+                        return True
+
+                    # update once per second
+                    GLib.timeout_add_seconds(1, tick)
+                    # Wait until dialog is destroyed or cancelled: poll every 0.1s
+                    while True:
+                        if data['cancelled']:
+                            confirm = False
+                            break
+                        # if md was destroyed, we can assume countdown finished
+                        try:
+                            if not md.get_visible():
+                                break
+                        except Exception:
+                            break
+                        time.sleep(0.1)
                 if not confirm:
                     logger.info('User cancelled post-export shutdown')
                 else:
