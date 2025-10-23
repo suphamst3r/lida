@@ -45,6 +45,8 @@ class Config(GObject.Object):
         'post_export_shutdown_delay': 10,
         'post_export_sound': None,
         'post_export_commands': None,
+        'export_subtitle_path': None,
+        'export_subtitle_mode': 'passthrough',
     }
 
     def __init__(self, style_manager: Adw.StyleManager):
@@ -69,9 +71,11 @@ class Config(GObject.Object):
         self._post_export_close = self._defaults['post_export_close']
         self._post_export_shutdown = self._defaults['post_export_shutdown']
         self._post_export_confirm_shutdown = self._defaults['post_export_confirm_shutdown']
-    self._post_export_shutdown_delay = self._defaults['post_export_shutdown_delay']
+        self._post_export_shutdown_delay = self._defaults['post_export_shutdown_delay']
         self._post_export_sound = self._defaults['post_export_sound']
         self._post_export_commands = self._defaults['post_export_commands']
+        self._export_subtitle_path = self._defaults['export_subtitle_path']
+        self._export_subtitle_mode = self._defaults['export_subtitle_mode']
         self.save_lock = threading.Lock()
         self._style_manager = style_manager
 
@@ -288,6 +292,35 @@ class Config(GObject.Object):
         self.save()
 
     @GObject.Property()
+    def export_subtitle_path(self):
+        return self._export_subtitle_path
+
+    @export_subtitle_path.setter
+    def export_subtitle_path(self, value):
+        if value == self._export_subtitle_path:
+            return
+        # allow clearing with empty string or None
+        if value == "" or value is None:
+            self._export_subtitle_path = None
+        else:
+            self._export_subtitle_path = value
+        self.save()
+
+    @GObject.Property()
+    def export_subtitle_mode(self):
+        return self._export_subtitle_mode
+
+    @export_subtitle_mode.setter
+    def export_subtitle_mode(self, value):
+        if value == self._export_subtitle_mode:
+            return
+        if value not in ('passthrough', 'burn'):
+            # fall back to passthrough for unknown values
+            value = 'passthrough'
+        self._export_subtitle_mode = value
+        self.save()
+
+    @GObject.Property()
     def export_codec(self):
         return self._export_codec
 
@@ -437,6 +470,8 @@ class Config(GObject.Object):
             'post_export_shutdown_delay': self._post_export_shutdown_delay,
             'post_export_sound': self._post_export_sound,
             'post_export_commands': self._post_export_commands,
+            'export_subtitle_path': self._export_subtitle_path,
+            'export_subtitle_mode': self._export_subtitle_mode,
         }
 
     def get_default_value(self, key):

@@ -47,6 +47,8 @@ class ConfigSidebar(Gtk.Box):
     spin_row_post_export_shutdown_delay: Adw.SpinRow = Gtk.Template.Child()
     entry_row_post_export_sound: Adw.EntryRow = Gtk.Template.Child()
     entry_row_post_export_commands: Adw.EntryRow = Gtk.Template.Child()
+    entry_row_post_export_subtitle: Adw.EntryRow = Gtk.Template.Child()
+    combo_row_post_export_subtitle_mode = Gtk.Template.Child()
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -151,6 +153,17 @@ class ConfigSidebar(Gtk.Box):
                 pass
             self.entry_row_post_export_sound.set_text(str(getattr(config, 'post_export_sound', '') or ''))
             self.entry_row_post_export_commands.set_text(str(getattr(config, 'post_export_commands', '') or ''))
+            # subtitles
+            try:
+                self.entry_row_post_export_subtitle.set_text(str(getattr(config, 'export_subtitle_path', '') or ''))
+            except Exception:
+                pass
+            try:
+                mode_map = {'passthrough': 0, 'burn': 1}
+                selected_mode = getattr(config, 'export_subtitle_mode', 'passthrough')
+                self.combo_row_post_export_subtitle_mode.set_selected(mode_map.get(selected_mode, 0))
+            except Exception:
+                pass
         except Exception:
             pass
         # if debug mode is enabled in config, open the debug console
@@ -406,6 +419,22 @@ class ConfigSidebar(Gtk.Box):
             self._config.post_export_shutdown_delay = int(spin_row.get_property('value'))
         except Exception:
             pass
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def entry_row_post_export_subtitle_changed_callback(self, entry_row):
+        text = self.entry_row_post_export_subtitle.get_text() or None
+        # empty string -> None
+        if text == '':
+            text = None
+        self._config.export_subtitle_path = text
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def combo_row_post_export_subtitle_mode_selected_callback(self, combo_row, value):
+        selected = combo_row.get_property('selected_item').get_string()
+        mapping = {'Passthrough':'passthrough', 'Burn-in (hardcode)':'burn'}
+        self._config.export_subtitle_mode = mapping.get(selected, 'passthrough')
 
     def set_file_name_pattern_row_styles(self):
         is_valid = validate_file_name_pattern(self.entry_row_file_name_pattern.get_text())

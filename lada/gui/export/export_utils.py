@@ -73,6 +73,26 @@ def get_progressbar_text(state: ExportItemState, progress: ExportItemDataProgres
         done_fraction = max(MIN_VISIBLE_PROGRESS_FRACTION, progress.fraction)
         time_done = _format_duration(progress._time_done_s)
         done_percent = f"{(done_fraction * 100):3.0f}"
+        def _format_bytes(num_bytes: int) -> str:
+            try:
+                if not num_bytes or num_bytes <= 0:
+                    return "0 B"
+                n = float(num_bytes)
+                for unit in ['B','KB','MB','GB','TB']:
+                    if n < 1024.0:
+                        return f"{n:3.1f} {unit}"
+                    n /= 1024.0
+                return f"{n:.1f} PB"
+            except Exception:
+                return "0 B"
+
+        est_size_text = ''
+        try:
+            if hasattr(progress, 'estimated_bytes') and progress.estimated_bytes and progress.estimated_bytes > 0:
+                est_size_text = f"  |  Est. size: {_format_bytes(int(progress.estimated_bytes))}"
+        except Exception:
+            est_size_text = ''
+
         if progress.enough_datapoints:
             time_remaining = _format_duration(progress.time_remaining_s)
             speed_fps = f"{progress.speed_fps:.1f}"
@@ -82,12 +102,12 @@ def get_progressbar_text(state: ExportItemState, progress: ExportItemDataProgres
                 time_remaining=time_remaining,
                 frames_done=progress.frames_done,
                 frames_remaining=progress.frames_remaining,
-                speed_fps=speed_fps)
+                speed_fps=speed_fps) + est_size_text
         else:
             text = _("Processing… {done_percent}%  |  Processed: {time_done} ({frames_done} frames)  |  Remaining: Estimating… |  Speed: Estimating…").format(
                 done_percent=done_percent,
                 time_done=time_done,
-                frames_done=progress.frames_done)
+                frames_done=progress.frames_done) + est_size_text
     elif state == ExportItemState.PAUSED:
         time_done = _format_duration(progress._time_done_s)
         text = _("Paused  |  Processed: {time_done} ({frames_done} frames)").format(time_done=time_done, frames_done=progress.frames_done)

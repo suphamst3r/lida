@@ -395,7 +395,6 @@ class ExportView(Gtk.Widget):
         assert os.path.isfile(source_file.get_path())
         if not self.resume_info:
             self.show_video_export_started(restore_file)
-
         def run_export():
             frame_restorer_options = FrameRestorerOptions(self._config.mosaic_restoration_model, self._config.mosaic_detection_model, video_utils.get_video_meta_data(source_file.get_path()), self._config.device, self._config.max_clip_duration, False, False)
             video_metadata = frame_restorer_options.video_metadata
@@ -404,7 +403,27 @@ class ExportView(Gtk.Widget):
             frame_restorer = frame_restorer_provider.get()
             restore_file_path = restore_file.get_path()
 
-            progress_update_step_size = 100
+            # how often (in frames) to update progress/estimate. Smaller -> more responsive UI
+            progress_update_step_size = 25
+            # estimate audio bytes by probing source file audio bitrate (bps -> bytes)
+            audio_estimated_bytes = 0
+            try:
+                src_path = source_file.get_path()
+                # ffprobe: get audio stream bit_rate if available
+                import subprocess
+                cmd = ['ffprobe', '-v', 'quiet', '-select_streams', 'a', '-show_entries', 'stream=bit_rate', '-of', 'default=nw=1:nk=1', src_path]
+                p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                out, err = p.communicate(timeout=5)
+                if p.returncode == 0 and out:
+                    try:
+                        bitrate_str = out.decode().strip().splitlines()[0]
+                        bitrate = int(bitrate_str)
+                        # bytes = bits/8 * duration
+                        audio_estimated_bytes = int((bitrate / 8.0) * float(video_metadata.duration))
+                    except Exception:
+                        audio_estimated_bytes = 0
+            except Exception:
+                audio_estimated_bytes = 0
             success = True
             base_tmp_dir = tempfile.gettempdir()
             try:
@@ -456,8 +475,26 @@ class ExportView(Gtk.Widget):
                     duration = duration_end - duration_start
                     duration_start = duration_end
                     self.progress_calculator.update(duration)
+                    # update progress and estimated size periodically
                     if frame_num % progress_update_step_size == 0:
-                        GLib.idle_add(lambda: self.emit('video-export-progress', self.progress_calculator.get_progress()))
+                        try:
+                            progress = self.progress_calculator.get_progress()
+                            # estimate final bytes based on current temp file size and processed fraction
+                            try:
+                                if os.path.exists(video_tmp_file_output_path) and progress.fraction > 0:
+                                    tmp_size = os.path.getsize(video_tmp_file_output_path)
+                                    # scale by inverse of fraction (avoid div by zero)
+                                    video_estimated_total = int(tmp_size / max(progress.fraction, 1e-6))
+                                else:
+                                    video_estimated_total = 0
+                            except Exception:
+                                video_estimated_total = 0
+                            estimated_total = int(video_estimated_total + (audio_estimated_bytes or 0))
+                            progress.estimated_bytes = estimated_total
+                            GLib.idle_add(lambda p=progress: self.emit('video-export-progress', p))
+                        except Exception:
+                            # fall back to emitting basic progress
+                            GLib.idle_add(lambda: self.emit('video-export-progress', self.progress_calculator.get_progress()))
 
                     if self.pause_requested:
                         logger.info("Pause requested: Pausing FrameRestorer")
@@ -481,9 +518,26 @@ class ExportView(Gtk.Widget):
                         frame_rate_mode = getattr(self._config, 'export_frame_rate_mode', 'auto') if self._config is not None else 'auto'
                     except Exception:
                         frame_rate_mode = 'auto'
-                    audio_utils.combine_audio_video_files(video_metadata, video_tmp_file_output_path, restore_file_path, frame_rate_mode=frame_rate_mode)
+                    subtitle_path = None
+                    subtitle_mode = 'passthrough'
+                    try:
+                        if self._config:
+                            subtitle_path = getattr(self._config, 'export_subtitle_path', None)
+                            subtitle_mode = getattr(self._config, 'export_subtitle_mode', 'passthrough')
+                    except Exception:
+                        pass
+                    audio_utils.combine_audio_video_files(video_metadata, video_tmp_file_output_path, restore_file_path, frame_rate_mode=frame_rate_mode, subtitle_path=subtitle_path, subtitle_mode=subtitle_mode)
                     def on_success():
                         progress = self.progress_calculator.get_progress()
+                        # final size: prefer the combined restore_file if present
+                        try:
+                            if os.path.exists(restore_file_path):
+                                final_size = os.path.getsize(restore_file_path)
+                            else:
+                                final_size = 0
+                        except Exception:
+                            final_size = 0
+                        progress.estimated_bytes = final_size
                         progress.complete()
                         self.emit('video-export-progress', progress)
                         self.emit('video-export-finished')
@@ -566,16 +620,8 @@ class ExportView(Gtk.Widget):
             try:
                 # Try simple cross-platform approaches
                 if platform.system() == 'Windows':
-                    try:
-                        import winsound
-                        if sound.lower().endswith('.wav'):
-                            winsound.PlaySound(sound, winsound.SND_FILENAME | winsound.SND_ASYNC)
-                        else:
-                            # fallback to PowerShell for other formats
-                            subprocess.Popen(["powershell", "-c", f"(New-Object Media.SoundPlayer '{sound}').PlaySync();"], shell=False)
-                    except Exception:
-                        # fallback to powershell if winsound not available or fails
-                        subprocess.Popen(["powershell", "-c", f"(New-Object Media.SoundPlayer '{sound}').PlaySync();"], shell=False)
+                    # use powershell PlaySound if available
+                    subprocess.Popen(["powershell", "-c", f"(New-Object Media.SoundPlayer '{sound}').PlaySync();"], shell=False)
                 else:
                     # try aplay or paplay or afplay
                     for player in ("paplay", "aplay", "afplay", "ffplay"):

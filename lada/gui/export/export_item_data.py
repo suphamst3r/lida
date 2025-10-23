@@ -20,6 +20,7 @@ class ExportItemDataProgress(GObject.Object):
         self._frames_remaining: int = 0
         self._speed_fps: float = 0.0
         self._enough_datapoints = False
+        self._estimated_bytes = 0.0
 
     @GObject.Property(type=float)
     def fraction(self):
@@ -76,6 +77,17 @@ class ExportItemDataProgress(GObject.Object):
     @enough_datapoints.setter
     def enough_datapoints(self, value):
         self._enough_datapoints = value
+
+    @GObject.Property(type=float)
+    def estimated_bytes(self):
+        return self._estimated_bytes
+
+    @estimated_bytes.setter
+    def estimated_bytes(self, value):
+        try:
+            self._estimated_bytes = float(value)
+        except Exception:
+            self._estimated_bytes = 0.0
 
     def complete(self):
         self._fraction = 1.0
