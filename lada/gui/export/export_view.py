@@ -566,8 +566,16 @@ class ExportView(Gtk.Widget):
             try:
                 # Try simple cross-platform approaches
                 if platform.system() == 'Windows':
-                    # use powershell PlaySound if available
-                    subprocess.Popen(["powershell", "-c", f"(New-Object Media.SoundPlayer '{sound}').PlaySync();"], shell=False)
+                    try:
+                        import winsound
+                        if sound.lower().endswith('.wav'):
+                            winsound.PlaySound(sound, winsound.SND_FILENAME | winsound.SND_ASYNC)
+                        else:
+                            # fallback to PowerShell for other formats
+                            subprocess.Popen(["powershell", "-c", f"(New-Object Media.SoundPlayer '{sound}').PlaySync();"], shell=False)
+                    except Exception:
+                        # fallback to powershell if winsound not available or fails
+                        subprocess.Popen(["powershell", "-c", f"(New-Object Media.SoundPlayer '{sound}').PlaySync();"], shell=False)
                 else:
                     # try aplay or paplay or afplay
                     for player in ("paplay", "aplay", "afplay", "ffplay"):
