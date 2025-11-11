@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Lada Authors
+# SPDX-License-Identifier: AGPL-3.0
+
 import logging
 import pathlib
 
@@ -22,33 +25,26 @@ class ConfigSidebar(Gtk.Box):
     combo_row_mosaic_detection_models = Gtk.Template.Child()
     spin_row_export_crf = Gtk.Template.Child()
     combo_row_export_codec = Gtk.Template.Child()
-    combo_row_export_frame_rate_mode = Gtk.Template.Child()
     spin_row_preview_buffer_duration = Gtk.Template.Child()
     spin_row_clip_max_duration = Gtk.Template.Child()
     switch_row_mute_audio = Gtk.Template.Child()
     preferences_page = Gtk.Template.Child()
-    action_row_temp_dir: Adw.ActionRow = Gtk.Template.Child()
-    button_select_temp_dir: Gtk.Button = Gtk.Template.Child()
-    check_button_debug_mode: Gtk.CheckButton = Gtk.Template.Child()
     light_color_scheme_button = Gtk.Template.Child()
     dark_color_scheme_button = Gtk.Template.Child()
     system_color_scheme_button = Gtk.Template.Child()
     action_row_export_directory: Adw.ActionRow = Gtk.Template.Child()
     check_button_export_directory_alwaysask: Gtk.CheckButton = Gtk.Template.Child()
     check_button_export_directory_defaultdir: Gtk.CheckButton = Gtk.Template.Child()
+    action_row_temp_directory: Adw.ActionRow = Gtk.Template.Child()
     entry_row_file_name_pattern: Adw.EntryRow = Gtk.Template.Child()
     toggle_button_initial_view_preview: Gtk.ToggleButton = Gtk.Template.Child()
     toggle_button_initial_view_export: Gtk.ToggleButton = Gtk.Template.Child()
     entry_row_custom_ffmpeg_encoder_options: Adw.EntryRow = Gtk.Template.Child()
-    check_button_show_mosaic_detections: Gtk.CheckButton = Gtk.Template.Child()
-    check_button_post_export_close: Gtk.CheckButton = Gtk.Template.Child()
+    check_button_post_export_none: Gtk.CheckButton = Gtk.Template.Child()
     check_button_post_export_shutdown: Gtk.CheckButton = Gtk.Template.Child()
-    check_button_post_export_confirm_shutdown: Gtk.CheckButton = Gtk.Template.Child()
-    spin_row_post_export_shutdown_delay: Adw.SpinRow = Gtk.Template.Child()
-    entry_row_post_export_sound: Adw.EntryRow = Gtk.Template.Child()
-    entry_row_post_export_commands: Adw.EntryRow = Gtk.Template.Child()
-    entry_row_post_export_subtitle: Adw.EntryRow = Gtk.Template.Child()
-    combo_row_post_export_subtitle_mode = Gtk.Template.Child()
+    check_button_post_export_custom_command: Gtk.CheckButton = Gtk.Template.Child()
+    entry_row_post_export_custom_command: Adw.EntryRow = Gtk.Template.Child()
+    check_button_show_mosaic_detections: Gtk.CheckButton = Gtk.Template.Child()
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -56,7 +52,6 @@ class ConfigSidebar(Gtk.Box):
         self.init_done = False
         self._show_playback_section = True
         self._show_export_section = True
-        self._debug_console = None
 
     def init_sidebar_from_config(self, config: Config):
         self.init_done = False
@@ -101,13 +96,6 @@ class ConfigSidebar(Gtk.Box):
         self.combo_row_export_codec.set_model(combo_row_export_codec_models_list)
         idx = codecs.index(config.export_codec)
         self.combo_row_export_codec.set_selected(idx)
-        # init frame rate mode
-        mode_map = {'auto':0, 'cfr':1, 'vfr':2}
-        selected_idx = mode_map.get(getattr(config, 'export_frame_rate_mode', 'auto'), 0)
-        try:
-            self.combo_row_export_frame_rate_mode.set_selected(selected_idx)
-        except Exception:
-            pass
 
         self.spin_row_export_crf.set_property('value', config.export_crf)
 
@@ -130,51 +118,22 @@ class ConfigSidebar(Gtk.Box):
 
         self.entry_row_file_name_pattern.set_text(config.file_name_pattern)
 
+        # init temp directory
+        self.action_row_temp_directory.set_subtitle(config.temp_directory)
+
         self.toggle_button_initial_view_preview.set_active(config.initial_view == "preview")
         self.toggle_button_initial_view_export.set_active(config.initial_view == "export")
 
         self.entry_row_custom_ffmpeg_encoder_options.set_text(config.custom_ffmpeg_encoder_options)
 
-        # init temp dir and debug mode
-        if config.temp_dir:
-            self.action_row_temp_dir.set_subtitle(config.temp_dir)
-        else:
-            self.action_row_temp_dir.set_subtitle(_("Use system temp"))
-
-        self.check_button_debug_mode.set_active(bool(config.debug_mode))
-        # init post-export actions
-        try:
-            self.check_button_post_export_close.set_active(bool(getattr(config, 'post_export_close', False)))
-            self.check_button_post_export_shutdown.set_active(bool(getattr(config, 'post_export_shutdown', False)))
-            self.check_button_post_export_confirm_shutdown.set_active(bool(getattr(config, 'post_export_confirm_shutdown', True)))
-            try:
-                self.spin_row_post_export_shutdown_delay.set_value(int(getattr(config, 'post_export_shutdown_delay', 10)))
-            except Exception:
-                pass
-            self.entry_row_post_export_sound.set_text(str(getattr(config, 'post_export_sound', '') or ''))
-            self.entry_row_post_export_commands.set_text(str(getattr(config, 'post_export_commands', '') or ''))
-            # subtitles
-            try:
-                self.entry_row_post_export_subtitle.set_text(str(getattr(config, 'export_subtitle_path', '') or ''))
-            except Exception:
-                pass
-            try:
-                mode_map = {'passthrough': 0, 'burn': 1}
-                selected_mode = getattr(config, 'export_subtitle_mode', 'passthrough')
-                self.combo_row_post_export_subtitle_mode.set_selected(mode_map.get(selected_mode, 0))
-            except Exception:
-                pass
-        except Exception:
-            pass
-        # if debug mode is enabled in config, open the debug console
-        if config.debug_mode:
-            try:
-                from lada.gui.debug_console import DebugConsoleWindow
-                if not getattr(self, '_debug_console', None):
-                    self._debug_console = DebugConsoleWindow()
-                self._debug_console.present()
-            except Exception as e:
-                logger.exception(f"Failed to open debug console on init: {e}")
+        # init post-export action
+        from lada.gui.config.config import PostExportAction
+        self.check_button_post_export_shutdown.set_active(config.post_export_action == PostExportAction.SHUTDOWN.value)
+        self.check_button_post_export_custom_command.set_active(config.post_export_action == PostExportAction.CUSTOM_COMMAND.value)
+        # Set none as active if neither shutdown nor custom command is selected
+        self.check_button_post_export_none.set_active(config.post_export_action not in [PostExportAction.SHUTDOWN.value, PostExportAction.CUSTOM_COMMAND.value])
+        self.entry_row_post_export_custom_command.set_text(config.post_export_custom_command)
+        self.update_custom_command_visibility(config.post_export_action)
 
         self.init_done = True
 
@@ -213,17 +172,17 @@ class ConfigSidebar(Gtk.Box):
 
     @Gtk.Template.Callback()
     @skip_if_uninitialized
-    def combo_row_mosaic_removal_models_selected_callback(self, combo_row, value):
+    def combo_row_mosaic_removal_models_selected_callback(self, combo_row, value=None):
         self._config.mosaic_restoration_model = combo_row.get_property("selected_item").get_string()
 
     @Gtk.Template.Callback()
     @skip_if_uninitialized
-    def combo_row_mosaic_detection_models_selected_callback(self, combo_row, value):
+    def combo_row_mosaic_detection_models_selected_callback(self, combo_row, value=None):
         self._config.mosaic_detection_model = combo_row.get_property("selected_item").get_string()
 
     @Gtk.Template.Callback()
     @skip_if_uninitialized
-    def combo_row_mosaic_export_codec_selected_callback(self, combo_row, value):
+    def combo_row_mosaic_export_codec_selected_callback(self, combo_row, value=None):
         self._config.export_codec = combo_row.get_property("selected_item").get_string()
 
     @Gtk.Template.Callback()
@@ -233,7 +192,7 @@ class ConfigSidebar(Gtk.Box):
 
     @Gtk.Template.Callback()
     @skip_if_uninitialized
-    def combo_row_gpu_selected_callback(self, combo_row, value):
+    def combo_row_gpu_selected_callback(self, combo_row, value=None):
         selected_gpu_name = combo_row.get_property("selected_item").get_string()
         for id, name in utils.get_available_gpus():
             if name == selected_gpu_name:
@@ -297,6 +256,11 @@ class ConfigSidebar(Gtk.Box):
 
     @Gtk.Template.Callback()
     @skip_if_uninitialized
+    def toggle_button_temp_directory_filepicker_callback(self, button_clicked):
+        self.show_select_temp_folder()
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
     def entry_row_file_name_pattern_changed_callback(self, entry_row):
         self.set_file_name_pattern_row_styles()
         if validate_file_name_pattern(self.entry_row_file_name_pattern.get_text()):
@@ -324,117 +288,8 @@ class ConfigSidebar(Gtk.Box):
 
     @Gtk.Template.Callback()
     @skip_if_uninitialized
-    def combo_row_export_frame_rate_mode_selected_callback(self, combo_row, value):
-        selected = combo_row.get_property('selected_item').get_string()
-        mapping = {'Auto':'auto', 'Constant (CFR)':'cfr', 'Variable (VFR)':'vfr'}
-        # use title text to map to internal value
-        self._config.export_frame_rate_mode = mapping.get(selected, 'auto')
-
-    @Gtk.Template.Callback()
-    @skip_if_uninitialized
-    def button_select_temp_dir_callback(self, button_clicked):
-        file_dialog = Gtk.FileDialog()
-        file_dialog.set_title(_("Select a temporary folder"))
-        def on_select_folder(_file_dialog, result):
-            try:
-                selected_folder: Gio.File = _file_dialog.select_folder_finish(result)
-                selected_folder_path = selected_folder.get_path()
-                try:
-                    self._config.temp_dir = selected_folder_path
-                    self.action_row_temp_dir.set_subtitle(selected_folder_path)
-                except ValueError as e:
-                        # show inline error in subtitle and modal dialog; keep previous value
-                        try:
-                            self.action_row_temp_dir.set_subtitle(str(e))
-                        except Exception:
-                            pass
-                        md = Gtk.MessageDialog(transient_for=self.get_root(), modal=True, message_type=Gtk.MessageType.ERROR,
-                                               buttons=Gtk.ButtonsType.OK, text=_('Invalid Temporary Directory'))
-                        md.format_secondary_text(str(e))
-                        md.connect('response', lambda d, r: d.destroy())
-                        md.show()
-            except GLib.Error as error:
-                if error.message == "Dismissed by user":
-                    logger.debug("Temp dir selection cancelled: Dismissed by user")
-                else:
-                    logger.error(f"Error selecting temp dir: {error.message}")
-        file_dialog.select_folder(callback=on_select_folder)
-
-    @Gtk.Template.Callback()
-    @skip_if_uninitialized
-    def check_button_debug_mode_toggled_callback(self, check_button):
-        active = check_button.get_active()
-        self._config.debug_mode = bool(active)
-        # open debug console when enabled
-        if active:
-            try:
-                from lada.gui.debug_console import DebugConsoleWindow
-                if not self._debug_console:
-                    self._debug_console = DebugConsoleWindow()
-                self._debug_console.present()
-            except Exception as e:
-                logger.exception(f"Failed to open debug console: {e}")
-        else:
-            try:
-                if self._debug_console:
-                    self._debug_console.close()
-                    self._debug_console = None
-            except Exception:
-                pass
-
-    @Gtk.Template.Callback()
-    @skip_if_uninitialized
     def check_button_show_mosaic_detections_callback(self, check_button):
         self._config.show_mosaic_detections = self.check_button_show_mosaic_detections.props.active
-
-    @Gtk.Template.Callback()
-    @skip_if_uninitialized
-    def entry_row_post_export_sound_changed_callback(self, entry_row):
-        self._config.post_export_sound = self.entry_row_post_export_sound.get_text() or None
-
-    @Gtk.Template.Callback()
-    @skip_if_uninitialized
-    def entry_row_post_export_commands_changed_callback(self, entry_row):
-        self._config.post_export_commands = self.entry_row_post_export_commands.get_text() or None
-
-    @Gtk.Template.Callback()
-    @skip_if_uninitialized
-    def check_button_post_export_close_toggled_callback(self, check_button):
-        self._config.post_export_close = self.check_button_post_export_close.get_active()
-
-    @Gtk.Template.Callback()
-    @skip_if_uninitialized
-    def check_button_post_export_shutdown_toggled_callback(self, check_button):
-        self._config.post_export_shutdown = self.check_button_post_export_shutdown.get_active()
-
-    @Gtk.Template.Callback()
-    @skip_if_uninitialized
-    def check_button_post_export_confirm_shutdown_toggled_callback(self, check_button):
-        self._config.post_export_confirm_shutdown = self.check_button_post_export_confirm_shutdown.get_active()
-
-    @Gtk.Template.Callback()
-    @skip_if_uninitialized
-    def spin_row_post_export_shutdown_delay_selected_callback(self, spin_row, value):
-        try:
-            self._config.post_export_shutdown_delay = int(spin_row.get_property('value'))
-        except Exception:
-            pass
-
-    @Gtk.Template.Callback()
-    @skip_if_uninitialized
-    def entry_row_post_export_subtitle_changed_callback(self, entry_row):
-        text = self.entry_row_post_export_subtitle.get_text() or None
-        # empty string -> None
-        if text == '':
-            text = None
-        self._config.export_subtitle_path = text
-
-    @Gtk.Template.Callback()
-    @skip_if_uninitialized
-    def combo_row_post_export_subtitle_mode_selected_callback(self, combo_row, value):
-        selected = combo_row.get_property('selected_item').get_string()
-        mapping = {'Passthrough':'passthrough', 'Burn-in (hardcode)':'burn'}
-        self._config.export_subtitle_mode = mapping.get(selected, 'passthrough')
 
     def set_file_name_pattern_row_styles(self):
         is_valid = validate_file_name_pattern(self.entry_row_file_name_pattern.get_text())
@@ -476,3 +331,55 @@ class ConfigSidebar(Gtk.Box):
                 if self.check_button_export_directory_defaultdir and not self._config.export_directory:
                     self.check_button_export_directory_alwaysask.set_active(True)
         file_dialog.select_folder(callback=on_select_folder)
+
+    def show_select_temp_folder(self):
+        file_dialog = Gtk.FileDialog()
+        file_dialog.set_title(_("Select a folder for temporary files"))
+        file_dialog.set_initial_folder(Gio.File.new_for_path(self._config.temp_directory))
+        def on_select_temp_folder(_file_dialog, result):
+            try:
+                selected_folder: Gio.File = _file_dialog.select_folder_finish(result)
+                selected_folder_path = selected_folder.get_path()
+                self._config.temp_directory = selected_folder_path
+                self.action_row_temp_directory.set_subtitle(selected_folder_path)
+            except GLib.Error as error:
+                if error.message == "Dismissed by user":
+                    logger.debug("FileDialog cancelled: Dismissed by user")
+                else:
+                    logger.error(f"Error selecting folder: {error.message}")
+                    raise error
+        file_dialog.select_folder(callback=on_select_temp_folder)
+
+    def update_custom_command_visibility(self, action):
+        self.entry_row_post_export_custom_command.set_visible(action == "custom_command")
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def check_button_post_export_none_callback(self, check_button):
+        from lada.gui.config.config import PostExportAction
+        if check_button.get_active():
+            self._config.post_export_action = PostExportAction.NONE.value
+        self.update_custom_command_visibility(self._config.post_export_action)
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def check_button_post_export_shutdown_callback(self, check_button):
+        from lada.gui.config.config import PostExportAction
+        if check_button.get_active():
+            self._config.post_export_action = PostExportAction.SHUTDOWN.value
+        self.update_custom_command_visibility(self._config.post_export_action)
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def check_button_post_export_custom_command_callback(self, check_button):
+        from lada.gui.config.config import PostExportAction
+        if check_button.get_active():
+            self._config.post_export_action = PostExportAction.CUSTOM_COMMAND.value
+        else:
+            self._config.post_export_action = PostExportAction.NONE.value
+        self.update_custom_command_visibility(self._config.post_export_action)
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def entry_row_post_export_custom_command_changed_callback(self, entry_row):
+        self._config.post_export_custom_command = self.entry_row_post_export_custom_command.get_text()

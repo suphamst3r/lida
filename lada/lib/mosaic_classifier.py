@@ -1,7 +1,10 @@
+# SPDX-FileCopyrightText: Lada Authors
+# SPDX-License-Identifier: AGPL-3.0
+
 from typing import Optional
 
 from lada.lib.ultralytics_utils import convert_yolo_boxes
-from lada.lib.scene_utils import box_overlap
+from lada.lib.box_utils import box_overlap
 from lada.lib import Image, Box
 from ultralytics import YOLO
 

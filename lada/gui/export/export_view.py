@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Lada Authors
+# SPDX-License-Identifier: AGPL-3.0
+
 import logging
 import os
 import pathlib
@@ -5,12 +8,10 @@ import tempfile
 import threading
 import time
 import traceback
-import shutil
 
 from gi.repository import Gtk, GObject, Gio, Adw, GLib
 
 from lada import LOG_LEVEL
-from lada import _
 from lada.gui import utils
 from lada.gui.config.config import Config
 from lada.gui.config.no_gpu_banner import NoGpuBanner
@@ -255,6 +256,7 @@ class ExportView(Gtk.Widget):
             self.config_sidebar.set_property("disabled", False)
             self.in_progress_idx = None
             self.update_export_buttons()
+            self.execute_post_export_action()
         else:
             # continue, queued items remaining
             self._start_export(self.model[next_idx].original_file, self.model[next_idx].restored_file)
@@ -395,6 +397,7 @@ class ExportView(Gtk.Widget):
         assert os.path.isfile(source_file.get_path())
         if not self.resume_info:
             self.show_video_export_started(restore_file)
+
         def run_export():
             frame_restorer_options = FrameRestorerOptions(self._config.mosaic_restoration_model, self._config.mosaic_detection_model, video_utils.get_video_meta_data(source_file.get_path()), self._config.device, self._config.max_clip_duration, False, False)
             video_metadata = frame_restorer_options.video_metadata
@@ -403,35 +406,10 @@ class ExportView(Gtk.Widget):
             frame_restorer = frame_restorer_provider.get()
             restore_file_path = restore_file.get_path()
 
-            # how often (in frames) to update progress/estimate. Smaller -> more responsive UI
-            progress_update_step_size = 25
-            # estimate audio bytes by probing source file audio bitrate (bps -> bytes)
-            audio_estimated_bytes = 0
-            try:
-                src_path = source_file.get_path()
-                # ffprobe: get audio stream bit_rate if available
-                import subprocess
-                cmd = ['ffprobe', '-v', 'quiet', '-select_streams', 'a', '-show_entries', 'stream=bit_rate', '-of', 'default=nw=1:nk=1', src_path]
-                p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                out, err = p.communicate(timeout=5)
-                if p.returncode == 0 and out:
-                    try:
-                        bitrate_str = out.decode().strip().splitlines()[0]
-                        bitrate = int(bitrate_str)
-                        # bytes = bits/8 * duration
-                        audio_estimated_bytes = int((bitrate / 8.0) * float(video_metadata.duration))
-                    except Exception:
-                        audio_estimated_bytes = 0
-            except Exception:
-                audio_estimated_bytes = 0
+            progress_update_step_size = 100
             success = True
-            base_tmp_dir = tempfile.gettempdir()
-            try:
-                if self._config and getattr(self._config, 'temp_dir', None):
-                    base_tmp_dir = self._config.temp_dir
-            except Exception:
-                pass
-            video_tmp_file_output_path = os.path.join(base_tmp_dir, f"{os.path.basename(os.path.splitext(restore_file_path)[0])}.tmp{os.path.splitext(restore_file_path)[1]}")
+            temp_dir = self._config.temp_directory
+            video_tmp_file_output_path = os.path.join(temp_dir, f"{os.path.basename(os.path.splitext(restore_file_path)[0])}.tmp{os.path.splitext(restore_file_path)[1]}")
             try:
                 if self.resume_info:
                     start_ns = self.resume_info.get_resume_timestamp_ns()
@@ -475,26 +453,8 @@ class ExportView(Gtk.Widget):
                     duration = duration_end - duration_start
                     duration_start = duration_end
                     self.progress_calculator.update(duration)
-                    # update progress and estimated size periodically
                     if frame_num % progress_update_step_size == 0:
-                        try:
-                            progress = self.progress_calculator.get_progress()
-                            # estimate final bytes based on current temp file size and processed fraction
-                            try:
-                                if os.path.exists(video_tmp_file_output_path) and progress.fraction > 0:
-                                    tmp_size = os.path.getsize(video_tmp_file_output_path)
-                                    # scale by inverse of fraction (avoid div by zero)
-                                    video_estimated_total = int(tmp_size / max(progress.fraction, 1e-6))
-                                else:
-                                    video_estimated_total = 0
-                            except Exception:
-                                video_estimated_total = 0
-                            estimated_total = int(video_estimated_total + (audio_estimated_bytes or 0))
-                            progress.estimated_bytes = estimated_total
-                            GLib.idle_add(lambda p=progress: self.emit('video-export-progress', p))
-                        except Exception:
-                            # fall back to emitting basic progress
-                            GLib.idle_add(lambda: self.emit('video-export-progress', self.progress_calculator.get_progress()))
+                        GLib.idle_add(lambda: self.emit('video-export-progress', self.progress_calculator.get_progress()))
 
                     if self.pause_requested:
                         logger.info("Pause requested: Pausing FrameRestorer")
@@ -514,38 +474,12 @@ class ExportView(Gtk.Widget):
                 GLib.idle_add(lambda: self.emit('video-export-paused'))
             else:
                 if success:
-                    try:
-                        frame_rate_mode = getattr(self._config, 'export_frame_rate_mode', 'auto') if self._config is not None else 'auto'
-                    except Exception:
-                        frame_rate_mode = 'auto'
-                    subtitle_path = None
-                    subtitle_mode = 'passthrough'
-                    try:
-                        if self._config:
-                            subtitle_path = getattr(self._config, 'export_subtitle_path', None)
-                            subtitle_mode = getattr(self._config, 'export_subtitle_mode', 'passthrough')
-                    except Exception:
-                        pass
-                    audio_utils.combine_audio_video_files(video_metadata, video_tmp_file_output_path, restore_file_path, frame_rate_mode=frame_rate_mode, subtitle_path=subtitle_path, subtitle_mode=subtitle_mode)
+                    audio_utils.combine_audio_video_files(video_metadata, video_tmp_file_output_path, restore_file_path)
                     def on_success():
                         progress = self.progress_calculator.get_progress()
-                        # final size: prefer the combined restore_file if present
-                        try:
-                            if os.path.exists(restore_file_path):
-                                final_size = os.path.getsize(restore_file_path)
-                            else:
-                                final_size = 0
-                        except Exception:
-                            final_size = 0
-                        progress.estimated_bytes = final_size
                         progress.complete()
                         self.emit('video-export-progress', progress)
                         self.emit('video-export-finished')
-                        # perform post-export actions configured by the user
-                        try:
-                            self.perform_post_export_actions()
-                        except Exception as e:
-                            logger.exception(f"Error performing post-export actions: {e}")
                     GLib.idle_add(on_success)
                 else:
                     if os.path.exists(video_tmp_file_output_path):
@@ -595,127 +529,79 @@ class ExportView(Gtk.Widget):
         restored_file_name = self._config.file_name_pattern.replace("{orig_file_name}", orig_file_name)
         return Gio.File.new_build_filenamev([output_dir, restored_file_name])
 
+    def execute_post_export_action(self):
+        from lada.gui.config.config import PostExportAction
+        action = self._config.post_export_action
+        if action == PostExportAction.NONE.value:
+            return
+        elif action == PostExportAction.SHUTDOWN.value:
+            logger.info("Post-export action: Shutting down PC - showing confirmation dialog")
+            self.show_shutdown_confirmation_dialog()
+        elif action == PostExportAction.CUSTOM_COMMAND.value:
+            command = self._config.post_export_custom_command.strip()
+            if command:
+                logger.info(f"Post-export action: Executing custom command: {command}")
+                import subprocess
+                try:
+                    subprocess.Popen(command, shell=True)
+                except Exception as e:
+                    logger.error(f"Failed to execute custom command '{command}': {e}")
+
+    def show_shutdown_confirmation_dialog(self):
+        dialog = Adw.AlertDialog(
+            heading=_("Shutdown System"),
+            body=_("Export has finished. The system will shutdown in 30 seconds."),
+        )
+
+        timeout_id = None
+        cancelled = False
+        responded = False
+
+        def execute_shutdown():
+            nonlocal cancelled, responded
+            if cancelled or responded:
+                return
+            logger.info("Timeout reached - proceeding with automatic shutdown")
+            import subprocess
+            import sys
+            try:
+                if sys.platform == "win32":
+                    # Windows shutdown immediately
+                    subprocess.run(["shutdown", "/s", "/t", "0"], check=True)
+                else:
+                    # Linux/Mac shutdown immediately
+                    subprocess.run(["shutdown", "now"], check=True)
+                logger.info("Shutdown command executed successfully")
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to initiate shutdown: {e}")
+                # Show error dialog
+                error_dialog = Adw.AlertDialog(
+                    heading=_("Shutdown Failed"),
+                    body=_("Failed to initiate system shutdown. Please check system permissions."),
+                )
+                error_dialog.add_response("ok", _("OK"))
+                error_dialog.choose(self, None, lambda *_: None)
+
+        def on_response_selected(_dialog, response):
+            nonlocal timeout_id, cancelled, responded
+            responded = True
+            if timeout_id:
+                GLib.source_remove(timeout_id)
+
+            if response == "shutdown":
+                logger.info("User confirmed shutdown - proceeding with system shutdown")
+                execute_shutdown()
+            else:
+                logger.info("User cancelled shutdown")
+
+        # Set up 30-second timeout for automatic shutdown
+        timeout_id = GLib.timeout_add_seconds(30, lambda: execute_shutdown() or True)
+
+        dialog.add_response("cancel", _("Cancel"))
+        dialog.add_response("shutdown", _("Shutdown now"))
+        dialog.set_response_appearance("shutdown", Adw.ResponseAppearance.DESTRUCTIVE)
+
+        dialog.choose(self, None, on_response_selected)
+
     def close(self):
         self.stop_requested = True
-
-    def perform_post_export_actions(self):
-        if not self._config:
-            return
-        import platform
-        import subprocess
-        # run commands
-        cmds = self._config.post_export_commands
-        if cmds:
-            for cmd in str(cmds).split(';'):
-                cmd = cmd.strip()
-                if not cmd:
-                    continue
-                try:
-                    subprocess.Popen(cmd, shell=True)
-                except Exception:
-                    logger.exception(f"Failed to run post-export command: {cmd}")
-        # play sound
-        sound = self._config.post_export_sound
-        if sound:
-            try:
-                # Try simple cross-platform approaches
-                if platform.system() == 'Windows':
-                    # use powershell PlaySound if available
-                    subprocess.Popen(["powershell", "-c", f"(New-Object Media.SoundPlayer '{sound}').PlaySync();"], shell=False)
-                else:
-                    # try aplay or paplay or afplay
-                    for player in ("paplay", "aplay", "afplay", "ffplay"):
-                        try:
-                            if shutil.which(player):
-                                if player == 'ffplay':
-                                    subprocess.Popen([player, '-nodisp', '-autoexit', sound])
-                                else:
-                                    subprocess.Popen([player, sound])
-                                break
-                        except Exception:
-                            continue
-            except Exception:
-                logger.exception("Failed to play post-export sound")
-        # shutdown
-        if self._config.post_export_shutdown:
-            try:
-                # If user requested confirmation show a dialog and abort shutdown if they cancel
-                confirm = True
-                try:
-                    confirm_pref = getattr(self._config, 'post_export_confirm_shutdown', True)
-                except Exception:
-                    confirm_pref = True
-                if confirm_pref:
-                    countdown_seconds = 10
-                    md = Gtk.Dialog(transient_for=self.get_root(), modal=True)
-                    md.add_button(_('Cancel'), Gtk.ResponseType.CANCEL)
-                    md.set_default_size(360, 120)
-                    box = md.get_content_area()
-                    label = Gtk.Label(label=_('The system will shutdown in {n} seconds.').format(n=countdown_seconds))
-                    label.set_wrap(True)
-                    box.append(label)
-                    md.show()
-
-                    data = {
-                        'remaining': countdown_seconds,
-                        'cancelled': False,
-                    }
-
-                    def on_dialog_response(dialog, response):
-                        if response == Gtk.ResponseType.CANCEL:
-                            data['cancelled'] = True
-                        try:
-                            dialog.destroy()
-                        except Exception:
-                            pass
-
-                    md.connect('response', on_dialog_response)
-
-                    def tick():
-                        if data['cancelled']:
-                            return False
-                        data['remaining'] -= 1
-                        if data['remaining'] <= 0:
-                            try:
-                                md.destroy()
-                            except Exception:
-                                pass
-                            # proceed with shutdown
-                            return False
-                        # update label
-                        label.set_text(_('The system will shutdown in {n} seconds.').format(n=data['remaining']))
-                        return True
-
-                    # update once per second
-                    GLib.timeout_add_seconds(1, tick)
-                    # Wait until dialog is destroyed or cancelled: poll every 0.1s
-                    while True:
-                        if data['cancelled']:
-                            confirm = False
-                            break
-                        # if md was destroyed, we can assume countdown finished
-                        try:
-                            if not md.get_visible():
-                                break
-                        except Exception:
-                            break
-                        time.sleep(0.1)
-                if not confirm:
-                    logger.info('User cancelled post-export shutdown')
-                else:
-                    if platform.system() == 'Windows':
-                        subprocess.Popen(["shutdown", "/s", "/t", "10"])  # 10s delay
-                    else:
-                        subprocess.Popen(["shutdown", "-h", "now"])  # may require sudo
-            except Exception:
-                logger.exception("Failed to initiate shutdown")
-        # close application
-        if self._config.post_export_close:
-            try:
-                # close top-level window
-                GLib.idle_add(lambda: self.get_root().close())
-            except Exception:
-                try:
-                    GLib.idle_add(lambda: Gtk.main_quit())
-                except Exception:
-                    pass

@@ -1,8 +1,10 @@
+# SPDX-FileCopyrightText: Lada Authors
+# SPDX-License-Identifier: AGPL-3.0
+
 import json
 import logging
+import tempfile
 import threading
-import os
-import tempfile as _tempfile
 from enum import Enum
 from pathlib import Path
 
@@ -20,6 +22,11 @@ class ColorScheme(Enum):
     LIGHT = 'light'
     DARK = 'dark'
 
+class PostExportAction(Enum):
+    NONE = 'none'
+    SHUTDOWN = 'shutdown'
+    CUSTOM_COMMAND = 'custom_command'
+
 class Config(GObject.Object):
     _defaults = {
         'color_scheme': ColorScheme.SYSTEM,
@@ -34,19 +41,11 @@ class Config(GObject.Object):
         'mosaic_detection_model': 'v3.1-fast',
         'mosaic_restoration_model': 'basicvsrpp-v1.2',
         'mute_audio': False,
+        'post_export_action': PostExportAction.NONE.value,
+        'post_export_custom_command': '',
         'preview_buffer_duration': 0,
         'show_mosaic_detections': False,
-        'temp_dir': None,
-        'debug_mode': False,
-        'export_frame_rate_mode': 'auto',
-        'post_export_close': False,
-        'post_export_shutdown': False,
-        'post_export_confirm_shutdown': True,
-        'post_export_shutdown_delay': 10,
-        'post_export_sound': None,
-        'post_export_commands': None,
-        'export_subtitle_path': None,
-        'export_subtitle_mode': 'passthrough',
+        'temp_directory': tempfile.gettempdir(),
     }
 
     def __init__(self, style_manager: Adw.StyleManager):
@@ -65,17 +64,10 @@ class Config(GObject.Object):
         self._mute_audio = self._defaults['mute_audio']
         self._preview_buffer_duration = self._defaults['preview_buffer_duration']
         self._show_mosaic_detections = self._defaults['show_mosaic_detections']
-        self._temp_dir = self._defaults['temp_dir']
-        self._debug_mode = self._defaults['debug_mode']
-        self._export_frame_rate_mode = self._defaults['export_frame_rate_mode']
-        self._post_export_close = self._defaults['post_export_close']
-        self._post_export_shutdown = self._defaults['post_export_shutdown']
-        self._post_export_confirm_shutdown = self._defaults['post_export_confirm_shutdown']
-        self._post_export_shutdown_delay = self._defaults['post_export_shutdown_delay']
-        self._post_export_sound = self._defaults['post_export_sound']
-        self._post_export_commands = self._defaults['post_export_commands']
-        self._export_subtitle_path = self._defaults['export_subtitle_path']
-        self._export_subtitle_mode = self._defaults['export_subtitle_mode']
+        self._post_export_action = PostExportAction.NONE
+        self._post_export_custom_command = self._defaults['post_export_custom_command']
+        self._temp_directory = self._defaults['temp_directory']
+
         self.save_lock = threading.Lock()
         self._style_manager = style_manager
 
@@ -168,159 +160,6 @@ class Config(GObject.Object):
         self.save()
 
     @GObject.Property()
-    def temp_dir(self):
-        return self._temp_dir
-
-    @temp_dir.setter
-    def temp_dir(self, value):
-        # Allow clearing the temp dir
-        if value is None or value == "":
-            if value == self._temp_dir:
-                return
-            self._temp_dir = None
-            self.save()
-            return
-
-        # Expand and validate the provided path. Try to create it and ensure it's writable.
-        p = Path(value).expanduser()
-        try:
-            if not p.exists():
-                p.mkdir(parents=True, exist_ok=True)
-            # test writing a temporary file
-            test_path = p.joinpath(f".lada_write_test_{os.getpid()}")
-            with open(test_path, 'w') as tf:
-                tf.write('0')
-            test_path.unlink()
-            # success
-            self._temp_dir = str(p)
-            self.save()
-        except Exception as e:
-            logger.error(f"Invalid temp_dir '{value}': {e}")
-            # raise so UI/CLI callers can present an error to the user
-            raise ValueError(f"Could not use temporary directory '{value}': {e}")
-
-    @GObject.Property()
-    def debug_mode(self):
-        return self._debug_mode
-
-    @debug_mode.setter
-    def debug_mode(self, value):
-        if value == self._debug_mode:
-            return
-        self._debug_mode = value
-        self.save()
-
-    @GObject.Property()
-    def export_frame_rate_mode(self):
-        return self._export_frame_rate_mode
-
-    @export_frame_rate_mode.setter
-    def export_frame_rate_mode(self, value):
-        if value == self._export_frame_rate_mode:
-            return
-        self._export_frame_rate_mode = value
-        self.save()
-
-    @GObject.Property()
-    def post_export_close(self):
-        return self._post_export_close
-
-    @post_export_close.setter
-    def post_export_close(self, value):
-        if value == self._post_export_close:
-            return
-        self._post_export_close = bool(value)
-        self.save()
-
-    @GObject.Property()
-    def post_export_shutdown(self):
-        return self._post_export_shutdown
-
-    @post_export_shutdown.setter
-    def post_export_shutdown(self, value):
-        if value == self._post_export_shutdown:
-            return
-        self._post_export_shutdown = bool(value)
-        self.save()
-
-    @GObject.Property()
-    def post_export_confirm_shutdown(self):
-        return self._post_export_confirm_shutdown
-
-    @post_export_confirm_shutdown.setter
-    def post_export_confirm_shutdown(self, value):
-        if value == self._post_export_confirm_shutdown:
-            return
-        self._post_export_confirm_shutdown = bool(value)
-        self.save()
-
-    @GObject.Property()
-    def post_export_shutdown_delay(self):
-        return self._post_export_shutdown_delay
-
-    @post_export_shutdown_delay.setter
-    def post_export_shutdown_delay(self, value):
-        try:
-            value_int = int(value)
-        except Exception:
-            value_int = self._post_export_shutdown_delay
-        if value_int == self._post_export_shutdown_delay:
-            return
-        self._post_export_shutdown_delay = value_int
-        self.save()
-
-    @GObject.Property()
-    def post_export_sound(self):
-        return self._post_export_sound
-
-    @post_export_sound.setter
-    def post_export_sound(self, value):
-        if value == self._post_export_sound:
-            return
-        self._post_export_sound = value
-        self.save()
-
-    @GObject.Property()
-    def post_export_commands(self):
-        return self._post_export_commands
-
-    @post_export_commands.setter
-    def post_export_commands(self, value):
-        if value == self._post_export_commands:
-            return
-        self._post_export_commands = value
-        self.save()
-
-    @GObject.Property()
-    def export_subtitle_path(self):
-        return self._export_subtitle_path
-
-    @export_subtitle_path.setter
-    def export_subtitle_path(self, value):
-        if value == self._export_subtitle_path:
-            return
-        # allow clearing with empty string or None
-        if value == "" or value is None:
-            self._export_subtitle_path = None
-        else:
-            self._export_subtitle_path = value
-        self.save()
-
-    @GObject.Property()
-    def export_subtitle_mode(self):
-        return self._export_subtitle_mode
-
-    @export_subtitle_mode.setter
-    def export_subtitle_mode(self, value):
-        if value == self._export_subtitle_mode:
-            return
-        if value not in ('passthrough', 'burn'):
-            # fall back to passthrough for unknown values
-            value = 'passthrough'
-        self._export_subtitle_mode = value
-        self.save()
-
-    @GObject.Property()
     def export_codec(self):
         return self._export_codec
 
@@ -387,6 +226,39 @@ class Config(GObject.Object):
         self._custom_ffmpeg_encoder_options = value
         self.save()
 
+    @GObject.Property()
+    def post_export_action(self):
+        return self._post_export_action
+
+    @post_export_action.setter
+    def post_export_action(self, value):
+        if value == self._post_export_action:
+            return
+        self._post_export_action = value
+        self.save()
+
+    @GObject.Property()
+    def post_export_custom_command(self):
+        return self._post_export_custom_command
+
+    @post_export_custom_command.setter
+    def post_export_custom_command(self, value):
+        if value == self._post_export_custom_command:
+            return
+        self._post_export_custom_command = value
+        self.save()
+
+    @GObject.Property()
+    def temp_directory(self):
+        return self._temp_directory
+
+    @temp_directory.setter
+    def temp_directory(self, value):
+        if value == self._temp_directory:
+            return
+        self._temp_directory = value
+        self.save()
+
     def save(self):
         self.save_lock.acquire_lock()
         config_file_path = self.get_config_file_path()
@@ -412,6 +284,11 @@ class Config(GObject.Object):
                 config_dict = json.load(f)
                 self._from_dict(config_dict)
                 logger.info(f"Loaded config file {config_file_path}: {config_dict}")
+                # Set defaults for new config keys if not present
+                if 'post_export_action' not in config_dict:
+                    self.post_export_action = PostExportAction.NONE.value
+                if 'post_export_custom_command' not in config_dict:
+                    self.post_export_custom_command = self._defaults['post_export_custom_command']
         except Exception as e:
             logger.error(f"Error loading config file {config_file_path}, falling back to defaults: {e}")
         # The config might have changed in case of new or invalid values. Let's save it.
@@ -430,11 +307,11 @@ class Config(GObject.Object):
         self.mosaic_detection_model = self._defaults['mosaic_detection_model']
         self.mosaic_restoration_model = self._defaults['mosaic_restoration_model']
         self.mute_audio = self._defaults['mute_audio']
+        self.post_export_action = self._defaults['post_export_action']
+        self.post_export_custom_command = self._defaults['post_export_custom_command']
         self.preview_buffer_duration = self._defaults['preview_buffer_duration']
         self.show_mosaic_detections = self._defaults['show_mosaic_detections']
-        self.temp_dir = self._defaults['temp_dir']
-        self.debug_mode = self._defaults['debug_mode']
-        self.export_frame_rate_mode = self._defaults['export_frame_rate_mode']
+        self.temp_directory = self._defaults['temp_directory']
         self.validate_and_set_device(self._defaults['device'])
         self.save()
 
@@ -459,19 +336,11 @@ class Config(GObject.Object):
             'mosaic_detection_model': self._mosaic_detection_model,
             'mosaic_restoration_model': self._mosaic_restoration_model,
             'mute_audio': self._mute_audio,
+            'post_export_action': self._post_export_action,
+            'post_export_custom_command': self._post_export_custom_command,
             'preview_buffer_duration': self._preview_buffer_duration,
             'show_mosaic_detections': self._show_mosaic_detections,
-            'temp_dir': self._temp_dir,
-            'debug_mode': self._debug_mode,
-            'export_frame_rate_mode': self._export_frame_rate_mode,
-            'post_export_close': self._post_export_close,
-            'post_export_shutdown': self._post_export_shutdown,
-            'post_export_confirm_shutdown': self._post_export_confirm_shutdown,
-            'post_export_shutdown_delay': self._post_export_shutdown_delay,
-            'post_export_sound': self._post_export_sound,
-            'post_export_commands': self._post_export_commands,
-            'export_subtitle_path': self._export_subtitle_path,
-            'export_subtitle_mode': self._export_subtitle_mode,
+            'temp_directory': self._temp_directory,
         }
 
     def get_default_value(self, key):
@@ -488,10 +357,24 @@ class Config(GObject.Object):
                     self.validate_and_set_detection_model(dict[key])
                 elif key == 'color_scheme':
                     self._color_scheme = ColorScheme(dict[key])
+                elif key == 'post_export_action':
+                    # Handle both old string values and new enum values
+                    if isinstance(dict[key], str):
+                        # Convert old string to enum
+                        for enum_value in PostExportAction:
+                            if enum_value.value == dict[key]:
+                                self._post_export_action = enum_value.value
+                                break
+                        else:
+                            self._post_export_action = PostExportAction.NONE.value
+                    else:
+                        self._post_export_action = PostExportAction.NONE.value
                 elif key == 'export_codec':
                     self.validate_and_set_export_codec(dict[key])
                 elif key == 'export_directory':
                     self.validate_and_set_export_directory(dict[key])
+                elif key == 'temp_directory':
+                    self.validate_and_set_temp_directory(dict[key])
                 elif key == 'file_name_pattern':
                     self.validate_and_set_file_name_pattern(dict[key])
                 elif key == 'initial_view':
@@ -569,6 +452,14 @@ class Config(GObject.Object):
             else:
                 self._export_directory = None
                 logger.warning(f"Configured export directory '{export_directory}' does not exist or is not a directory on the filesystem, falling back to '{self._export_directory}'")
+
+    def validate_and_set_temp_directory(self, temp_directory: str):
+        path = Path(temp_directory)
+        if path.is_dir():
+            self._temp_directory = temp_directory
+        else:
+            self._temp_directory = self.get_default_value('temp_directory')
+            logger.warning(f"Configured temp directory '{temp_directory}' does not exist or is not a directory on the filesystem, falling back to '{self._temp_directory}'")
 
     def validate_and_set_file_name_pattern(self, file_name_pattern: str):
         if utils.validate_file_name_pattern(file_name_pattern):
