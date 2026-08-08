@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Lada Authors
+# SPDX-License-Identifier: AGPL-3.0
+
 import logging
 import pathlib
 import sys
@@ -32,7 +35,8 @@ class PipelineManager(GObject.Object):
         self.has_audio: bool = False
         self._muted: bool = muted
 
-        self.audio_uridecodebin: Gst.UriDecodeBin | None = None
+        self.audio_filesrc: Gst.Element | None = None
+        self.audio_uridecodebin: Gst.Element | None = None
         self.audio_volume = None
         self.pipeline: Gst.Pipeline = Gst.Pipeline.new()
         self.video_buffer_queue: Gst.Queue | None = None
@@ -89,25 +93,29 @@ class PipelineManager(GObject.Object):
         return position if valid_position else None
 
     def on_bus_msg(self, _, msg: Gst.Message):
-        match msg.type:
-            case Gst.MessageType.EOS:
-                self.state = PipelineState.PAUSED
-                GLib.idle_add(lambda: self.emit("eos"))
-            case Gst.MessageType.ERROR:
-                (err, _) = msg.parse_error()
-                logger.error(f"Error from {msg.src.get_path_string()}: {err}")
-            case Gst.MessageType.STATE_CHANGED:
-                if msg.src == self.pipeline:
-                    old_state, new_state, pending_state = msg.parse_state_changed()
-                    if old_state == Gst.State.PAUSED and new_state == Gst.State.PLAYING:
-                        self.state = PipelineState.PLAYING
-                    elif old_state == Gst.State.PLAYING and new_state == Gst.State.PAUSED:
-                        self.state = PipelineState.PAUSED
-            case Gst.MessageType.STREAM_STATUS:
-                pass
-            case _:
-                # print("other message", msg.type)
-                pass
+        if msg.type == Gst.MessageType.EOS:
+            self.state = PipelineState.PAUSED
+            GLib.idle_add(lambda: self.emit("eos"))
+        elif msg.type == Gst.MessageType.ERROR:
+            (err, _) = msg.parse_error()
+            logger.error(f"Error from {msg.src.get_path_string()}: {err}")
+            # If error is from audio elements and we have audio enabled, disable audio
+            if self.has_audio and "tsdemux" in msg.src.get_path_string():
+                logger.warning("Disabling audio due to tsDemux error")
+                self.has_audio = False
+                self.pipeline_remove_audio()
+        elif msg.type == Gst.MessageType.STATE_CHANGED:
+            if msg.src == self.pipeline:
+                old_state, new_state, pending_state = msg.parse_state_changed()
+                if old_state == Gst.State.PAUSED and new_state == Gst.State.PLAYING:
+                    self.state = PipelineState.PLAYING
+                elif old_state == Gst.State.PLAYING and new_state == Gst.State.PAUSED:
+                    self.state = PipelineState.PAUSED
+        elif msg.type == Gst.MessageType.STREAM_STATUS:
+            pass
+        else:
+            # print("other message", msg.type)
+            pass
         return True
 
     def init_pipeline(self, video_metadata: VideoMetadata):
@@ -150,7 +158,50 @@ class PipelineManager(GObject.Object):
         seek_thread.start()
 
     def pipeline_add_audio(self):
-        audio_queue = Gst.ElementFactory.make('queue', None)
+        # Check if mpegtsdemux is available, otherwise fall back to uridecodebin
+        audio_mpegtsdemux = Gst.ElementFactory.make('mpegtsdemux')
+        if audio_mpegtsdemux is None:
+            logger.warning("mpegtsdemux not available, falling back to uridecodebin")
+            self.pipeline_add_audio_fallback()
+            return
+
+        audio_filesrc = Gst.ElementFactory.make('filesrc')
+        if audio_filesrc is None:
+            logger.error("Failed to create filesrc element")
+            self.has_audio = False
+            return
+        audio_filesrc.set_property('location', self.video_metadata.video_file)
+        self.pipeline.add(audio_filesrc)
+        self.pipeline_audio_elements.append(audio_filesrc)
+
+        self.pipeline.add(audio_mpegtsdemux)
+        self.pipeline_audio_elements.append(audio_mpegtsdemux)
+
+        audio_decodebin = Gst.ElementFactory.make('decodebin')
+        if audio_decodebin is None:
+            logger.error("Failed to create decodebin element")
+            self.has_audio = False
+            return
+
+        def on_pad_added(decodebin, decoder_src_pad, audio_queue):
+            caps = decoder_src_pad.get_current_caps()
+            if not caps:
+                caps = decoder_src_pad.query_caps()
+            gststruct = caps.get_structure(0)
+            gstname = gststruct.get_name()
+            if gstname.startswith("audio"):
+                sink_pad = audio_queue.get_static_pad("sink")
+                decoder_src_pad.link(sink_pad)
+
+        audio_decodebin.connect("pad-added", on_pad_added, None)
+        self.pipeline.add(audio_decodebin)
+        self.pipeline_audio_elements.append(audio_decodebin)
+
+        audio_queue = Gst.ElementFactory.make('queue')
+        if audio_queue is None:
+            logger.error("Failed to create queue element")
+            self.has_audio = False
+            return
         audio_queue.set_property('max-size-bytes', 0)
         audio_queue.set_property('max-size-buffers', 0)
         audio_queue.set_property('max-size-time', self.buffer_queue_max_thresh_time * Gst.SECOND)  # ns
@@ -158,7 +209,72 @@ class PipelineManager(GObject.Object):
         self.pipeline.add(audio_queue)
         self.pipeline_audio_elements.append(audio_queue)
 
-        audio_uridecodebin = Gst.ElementFactory.make('uridecodebin', None)
+        audio_audioconvert = Gst.ElementFactory.make('audioconvert')
+        if audio_audioconvert is None:
+            logger.error("Failed to create audioconvert element")
+            self.has_audio = False
+            return
+        self.pipeline.add(audio_audioconvert)
+        self.pipeline_audio_elements.append(audio_audioconvert)
+
+        audio_audioresample = Gst.ElementFactory.make('audioresample')
+        if audio_audioresample is None:
+            logger.error("Failed to create audioresample element")
+            self.has_audio = False
+            return
+        self.pipeline.add(audio_audioresample)
+        self.pipeline_audio_elements.append(audio_audioresample)
+
+        audio_volume = Gst.ElementFactory.make('volume')
+        if audio_volume is None:
+            logger.error("Failed to create volume element")
+            self.has_audio = False
+            return
+        audio_volume.set_property("mute", self._muted)
+        self.pipeline.add(audio_volume)
+        self.pipeline_audio_elements.append(audio_volume)
+
+        audio_sink = Gst.ElementFactory.make('autoaudiosink')
+        if audio_sink is None:
+            logger.error("Failed to create autoaudiosink element")
+            self.has_audio = False
+            return
+        self.pipeline.add(audio_sink)
+        self.pipeline_audio_elements.append(audio_sink)
+
+        # Link the elements
+        audio_filesrc.link(audio_mpegtsdemux)
+        # audio_mpegtsdemux will dynamically link to audio_decodebin via pad-added
+        audio_mpegtsdemux.connect("pad-added", lambda demux, pad: pad.link(audio_decodebin.get_static_pad("sink")) if pad.get_current_caps().get_structure(0).get_name().startswith("audio") else None)
+        # note that we cannot link decodebin directly to audio_queue as pads are dynamically added and not available at this point
+        # see on_pad_added()
+        audio_queue.link(audio_audioconvert)
+        audio_audioconvert.link(audio_audioresample)
+        audio_audioresample.link(audio_volume)
+        audio_volume.link(audio_sink)
+
+        self.audio_filesrc = audio_filesrc
+        self.audio_volume = audio_volume
+        self.audio_buffer_queue = audio_queue
+
+    def pipeline_add_audio_fallback(self):
+        audio_queue = Gst.ElementFactory.make('queue')
+        if audio_queue is None:
+            logger.error("Failed to create queue element")
+            self.has_audio = False
+            return
+        audio_queue.set_property('max-size-bytes', 0)
+        audio_queue.set_property('max-size-buffers', 0)
+        audio_queue.set_property('max-size-time', self.buffer_queue_max_thresh_time * Gst.SECOND)  # ns
+        audio_queue.set_property('min-threshold-time', self.buffer_queue_min_thresh_time * Gst.SECOND)
+        self.pipeline.add(audio_queue)
+        self.pipeline_audio_elements.append(audio_queue)
+
+        audio_uridecodebin = Gst.ElementFactory.make('uridecodebin')
+        if audio_uridecodebin is None:
+            logger.error("Failed to create uridecodebin element")
+            self.has_audio = False
+            return
         audio_uridecodebin.set_property('uri', self.path_to_gst_uri(self.video_metadata.video_file))
 
         def on_pad_added(decodebin, decoder_src_pad, audio_queue):
@@ -175,20 +291,36 @@ class PipelineManager(GObject.Object):
         self.pipeline.add(audio_uridecodebin)
         self.pipeline_audio_elements.append(audio_uridecodebin)
 
-        audio_audioconvert = Gst.ElementFactory.make('audioconvert', None)
+        audio_audioconvert = Gst.ElementFactory.make('audioconvert')
+        if audio_audioconvert is None:
+            logger.error("Failed to create audioconvert element")
+            self.has_audio = False
+            return
         self.pipeline.add(audio_audioconvert)
         self.pipeline_audio_elements.append(audio_audioconvert)
 
-        audio_audioresample = Gst.ElementFactory.make('audioresample', None)
+        audio_audioresample = Gst.ElementFactory.make('audioresample')
+        if audio_audioresample is None:
+            logger.error("Failed to create audioresample element")
+            self.has_audio = False
+            return
         self.pipeline.add(audio_audioresample)
         self.pipeline_audio_elements.append(audio_audioresample)
 
-        audio_volume = Gst.ElementFactory.make('volume', None)
+        audio_volume = Gst.ElementFactory.make('volume')
+        if audio_volume is None:
+            logger.error("Failed to create volume element")
+            self.has_audio = False
+            return
         audio_volume.set_property("mute", self._muted)
         self.pipeline.add(audio_volume)
         self.pipeline_audio_elements.append(audio_volume)
 
-        audio_sink = Gst.ElementFactory.make('autoaudiosink', None)
+        audio_sink = Gst.ElementFactory.make('autoaudiosink')
+        if audio_sink is None:
+            logger.error("Failed to create autoaudiosink element")
+            self.has_audio = False
+            return
         self.pipeline.add(audio_sink)
         self.pipeline_audio_elements.append(audio_sink)
 
@@ -245,6 +377,7 @@ class PipelineManager(GObject.Object):
         for audio_element in self.pipeline_audio_elements:
             audio_element.set_state(Gst.State.NULL)
             self.pipeline.remove(audio_element)
+        self.audio_filesrc = None
         self.audio_uridecodebin = None
         self.audio_volume = None
         self.audio_buffer_queue = None
@@ -256,7 +389,10 @@ class PipelineManager(GObject.Object):
         self.has_audio = audio_utils.get_audio_codec(self.video_metadata.video_file) is not None
         if self.has_audio:
             if audio_pipeline_already_added:
-                self.audio_uridecodebin.set_property('uri', self.path_to_gst_uri(self.video_metadata.video_file))
+                if self.audio_filesrc:
+                    self.audio_filesrc.set_property('location', self.video_metadata.video_file)
+                elif self.audio_uridecodebin:
+                    self.audio_uridecodebin.set_property('uri', self.path_to_gst_uri(self.video_metadata.video_file))
             else:
                 self.pipeline_add_audio()
         else:
@@ -273,7 +409,7 @@ class PipelineManager(GObject.Object):
     def update_gst_buffers(self, buffer_queue_min_thresh_time, buffer_queue_max_thresh_time):
         self.video_buffer_queue.set_property('max-size-time', buffer_queue_max_thresh_time * Gst.SECOND)
         self.video_buffer_queue.set_property('min-threshold-time', buffer_queue_min_thresh_time * Gst.SECOND)
-        if self.has_audio:
+        if self.has_audio and self.audio_buffer_queue:
             self.audio_buffer_queue.set_property('max-size-time', buffer_queue_max_thresh_time * Gst.SECOND)
             self.audio_buffer_queue.set_property('min-threshold-time', buffer_queue_min_thresh_time * Gst.SECOND)
 

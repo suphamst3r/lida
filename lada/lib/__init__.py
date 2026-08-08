@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Lada Authors
+# SPDX-License-Identifier: AGPL-3.0
+
 from dataclasses import dataclass
 from fractions import Fraction
 
@@ -44,3 +47,27 @@ class VideoMetadata:
     duration: float
     time_base: Fraction
     start_pts: int
+
+@dataclass
+class Detection:
+    cls: int
+    box: Box
+    mask: Mask # Binary segmentation mask. Values can be either 0 (background) or mask_val
+
+"""
+Detection result containing bounding box and segmentation mask of the detected object within the frame
+"""
+@dataclass
+class Detections:
+    frame: Image
+    detections: list[Detection]
+
+"""
+Mapping for class ids and mask values.
+Mask value is anon-zero value used in binary mask (Mask) to indicate if pixel belongs to the class
+"""
+DETECTION_CLASSES = {
+    "nsfw": dict(cls=0, mask_value=255),
+    "sfw_head": dict(cls=1, mask_value=127),
+    "sfw_face": dict(cls=2, mask_value=192),
+}

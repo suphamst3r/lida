@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+SPDX-FileCopyrightText: Lada Authors
+SPDX-License-Identifier: AGPL-3.0
+-->
+
 <interface>
     <requires lib="gtk" version="4.0"/>
     <requires lib="Adw" version="1.0"/>
@@ -29,6 +35,14 @@
                                 <property name="tooltip-text" translatable="true">Toggle Fullscreen</property>
                                 <property name="sensitive">True</property>
                                 <signal name="clicked" handler="button_toggle_fullscreen_callback"/>
+                            </object>
+                        </child>
+                        <child type="start">
+                            <object class="GtkButton" id="button_resize_real">
+                                <property name="icon-name">zoom-original-symbolic</property>
+                                <property name="tooltip-text" translatable="true">Resize player to video resolution</property>
+                                <property name="sensitive">True</property>
+                                <signal name="clicked" handler="button_resize_real_callback"/>
                             </object>
                         </child>
                         <child type="start">

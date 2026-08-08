@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Lada Authors
+# SPDX-License-Identifier: AGPL-3.0
+
 import logging
 
 import av
@@ -10,7 +13,7 @@ from lada.lib import video_utils, os_utils
 
 logger = logging.getLogger(__name__)
 
-def combine_audio_video_files(av_video_metadata: video_utils.VideoMetadata, tmp_v_video_input_path, av_video_output_path):
+def combine_audio_video_files(av_video_metadata: video_utils.VideoMetadata, tmp_v_video_input_path, av_video_output_path, frame_rate_mode: str = 'auto', subtitle_path: Optional[str] = None, subtitle_mode: str = 'passthrough'):
     audio_codec = get_audio_codec(av_video_metadata.video_file)
     if audio_codec:
         needs_audio_reencoding = not is_output_container_compatible_with_input_audio_codec(audio_codec, av_video_output_path)
@@ -22,13 +25,40 @@ def combine_audio_video_files(av_video_metadata: video_utils.VideoMetadata, tmp_
             delay_in_seconds = float(av_video_metadata.start_pts * av_video_metadata.time_base)
             cmd += ["-itsoffset", str(delay_in_seconds)]
         cmd += ["-i", tmp_v_video_input_path]
+        # Apply frame rate mode if requested
+        if frame_rate_mode == 'cfr':
+            # ensure constant frame rate on output
+            cmd += ["-vsync", "cfr"]
         if needs_audio_reencoding:
             cmd += ["-c:v", "copy"]
         else:
             cmd += ["-c", "copy"]
         cmd += ["-map", "1:v:0"]
         cmd += ["-map", "0:a:0"]
-        cmd += [av_video_output_path]
+        # Handle subtitles if provided
+        if subtitle_path:
+            # If burn-in requested, use subtitles filter (requires re-encoding video)
+            if subtitle_mode == 'burn':
+                # move tmp video to be first video input and apply subtitles filter
+                # Build filter graph: use subtitles filter on the tmp video input (index 1)
+                filter_arg = f"subtitles={subtitle_path}"
+                # Ensure we don't copy video stream
+                cmd += ["-vf", filter_arg]
+                # set mapping: use tmp video (1:v:0) and input audio (0:a:0)
+                cmd += ["-map", "1:v:0"]
+                cmd += ["-map", "0:a:0"]
+                # let codec choice remain (we will not copy video)
+            else:
+                # passthrough: include subtitle as separate input stream and map it
+                cmd += ["-i", subtitle_path]
+                # map video and audio as before
+                cmd += ["-map", "1:v:0"]
+                cmd += ["-map", "0:a:0"]
+                # map subtitle stream
+                cmd += ["-map", "2:s:0"]
+                # copy subtitle codec if possible
+                cmd += ["-c:s", "copy"]
+            cmd += [av_video_output_path]
         subprocess.run(cmd, stdout=subprocess.PIPE, startupinfo=os_utils.get_subprocess_startup_info())
     else:
         shutil.copy(tmp_v_video_input_path, av_video_output_path)
@@ -48,6 +78,9 @@ def is_output_container_compatible_with_input_audio_codec(audio_codec: str, outp
         output_container_format = "mp4"
     elif file_extension == '.mkv':
         output_container_format = "matroska"
+    elif file_extension in ('.ts', '.mpeg', '.mpg'):
+        # MPEG-TS container
+        output_container_format = "mpegts"
     else:
         logger.info(f"Couldn't determine video container format based on file extension: {file_extension}")
         return False

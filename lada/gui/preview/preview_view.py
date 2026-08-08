@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Lada Authors
+# SPDX-License-Identifier: AGPL-3.0
+
 import logging
 import pathlib
 import threading
@@ -42,6 +45,7 @@ class PreviewView(Gtk.Widget):
     config_sidebar: ConfigSidebar = Gtk.Template.Child()
     header_bar: Adw.HeaderBar = Gtk.Template.Child()
     button_toggle_fullscreen: Gtk.Button = Gtk.Template.Child()
+    button_resize_real: Gtk.Button = Gtk.Template.Child()
     stack_video_preview: Gtk.Stack = Gtk.Template.Child()
     view_switcher: Adw.ViewSwitcher = Gtk.Template.Child()
     button_open_files: Gtk.Button = Gtk.Template.Child()
@@ -158,6 +162,11 @@ class PreviewView(Gtk.Widget):
     def toggle_fullscreen_requested(self):
         pass
 
+    @GObject.Signal(name="request-native-resize")
+    def request_native_resize(self):
+        """Signal emitted when the user requests the window be resized to the video's native resolution."""
+        pass
+
     @GObject.Signal(name="files-opened", arg_types=(GObject.TYPE_PYOBJECT,))
     def files_opened_signal(self, files: list[Gio.File]):
         pass
@@ -169,6 +178,15 @@ class PreviewView(Gtk.Widget):
     @Gtk.Template.Callback()
     def button_toggle_fullscreen_callback(self, button_clicked):
         self.emit("toggle-fullscreen-requested")
+
+    @Gtk.Template.Callback()
+    def button_resize_real_callback(self, button_clicked):
+        # Request the containing window to resize to the video's native resolution
+        if not self.video_metadata:
+            return
+        # The PipelineManager exposes a paintable we can use to calculate size when available
+        if self.pipeline_manager and getattr(self.pipeline_manager, 'paintable', None):
+            self.emit('request-native-resize', self.pipeline_manager.paintable, self.box_playback_controls, self.header_bar)
 
     @Gtk.Template.Callback()
     def button_play_pause_callback(self, button_clicked):

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Lada Authors
+# SPDX-License-Identifier: AGPL-3.0
+
 import logging
 import pathlib
 
@@ -32,10 +35,15 @@ class ConfigSidebar(Gtk.Box):
     action_row_export_directory: Adw.ActionRow = Gtk.Template.Child()
     check_button_export_directory_alwaysask: Gtk.CheckButton = Gtk.Template.Child()
     check_button_export_directory_defaultdir: Gtk.CheckButton = Gtk.Template.Child()
+    action_row_temp_directory: Adw.ActionRow = Gtk.Template.Child()
     entry_row_file_name_pattern: Adw.EntryRow = Gtk.Template.Child()
     toggle_button_initial_view_preview: Gtk.ToggleButton = Gtk.Template.Child()
     toggle_button_initial_view_export: Gtk.ToggleButton = Gtk.Template.Child()
     entry_row_custom_ffmpeg_encoder_options: Adw.EntryRow = Gtk.Template.Child()
+    check_button_post_export_none: Gtk.CheckButton = Gtk.Template.Child()
+    check_button_post_export_shutdown: Gtk.CheckButton = Gtk.Template.Child()
+    check_button_post_export_custom_command: Gtk.CheckButton = Gtk.Template.Child()
+    entry_row_post_export_custom_command: Adw.EntryRow = Gtk.Template.Child()
     check_button_show_mosaic_detections: Gtk.CheckButton = Gtk.Template.Child()
 
     def __init__(self, **kwargs):
@@ -110,10 +118,22 @@ class ConfigSidebar(Gtk.Box):
 
         self.entry_row_file_name_pattern.set_text(config.file_name_pattern)
 
+        # init temp directory
+        self.action_row_temp_directory.set_subtitle(config.temp_directory)
+
         self.toggle_button_initial_view_preview.set_active(config.initial_view == "preview")
         self.toggle_button_initial_view_export.set_active(config.initial_view == "export")
 
         self.entry_row_custom_ffmpeg_encoder_options.set_text(config.custom_ffmpeg_encoder_options)
+
+        # init post-export action
+        from lada.gui.config.config import PostExportAction
+        self.check_button_post_export_shutdown.set_active(config.post_export_action == PostExportAction.SHUTDOWN.value)
+        self.check_button_post_export_custom_command.set_active(config.post_export_action == PostExportAction.CUSTOM_COMMAND.value)
+        # Set none as active if neither shutdown nor custom command is selected
+        self.check_button_post_export_none.set_active(config.post_export_action not in [PostExportAction.SHUTDOWN.value, PostExportAction.CUSTOM_COMMAND.value])
+        self.entry_row_post_export_custom_command.set_text(config.post_export_custom_command)
+        self.update_custom_command_visibility(config.post_export_action)
 
         self.init_done = True
 
@@ -152,17 +172,17 @@ class ConfigSidebar(Gtk.Box):
 
     @Gtk.Template.Callback()
     @skip_if_uninitialized
-    def combo_row_mosaic_removal_models_selected_callback(self, combo_row, value):
+    def combo_row_mosaic_removal_models_selected_callback(self, combo_row, value=None):
         self._config.mosaic_restoration_model = combo_row.get_property("selected_item").get_string()
 
     @Gtk.Template.Callback()
     @skip_if_uninitialized
-    def combo_row_mosaic_detection_models_selected_callback(self, combo_row, value):
+    def combo_row_mosaic_detection_models_selected_callback(self, combo_row, value=None):
         self._config.mosaic_detection_model = combo_row.get_property("selected_item").get_string()
 
     @Gtk.Template.Callback()
     @skip_if_uninitialized
-    def combo_row_mosaic_export_codec_selected_callback(self, combo_row, value):
+    def combo_row_mosaic_export_codec_selected_callback(self, combo_row, value=None):
         self._config.export_codec = combo_row.get_property("selected_item").get_string()
 
     @Gtk.Template.Callback()
@@ -172,7 +192,7 @@ class ConfigSidebar(Gtk.Box):
 
     @Gtk.Template.Callback()
     @skip_if_uninitialized
-    def combo_row_gpu_selected_callback(self, combo_row, value):
+    def combo_row_gpu_selected_callback(self, combo_row, value=None):
         selected_gpu_name = combo_row.get_property("selected_item").get_string()
         for id, name in utils.get_available_gpus():
             if name == selected_gpu_name:
@@ -233,6 +253,11 @@ class ConfigSidebar(Gtk.Box):
     @skip_if_uninitialized
     def toggle_button_export_directory_filepicker_callback(self, button_clicked):
         self.show_select_folder()
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def toggle_button_temp_directory_filepicker_callback(self, button_clicked):
+        self.show_select_temp_folder()
 
     @Gtk.Template.Callback()
     @skip_if_uninitialized
@@ -306,3 +331,55 @@ class ConfigSidebar(Gtk.Box):
                 if self.check_button_export_directory_defaultdir and not self._config.export_directory:
                     self.check_button_export_directory_alwaysask.set_active(True)
         file_dialog.select_folder(callback=on_select_folder)
+
+    def show_select_temp_folder(self):
+        file_dialog = Gtk.FileDialog()
+        file_dialog.set_title(_("Select a folder for temporary files"))
+        file_dialog.set_initial_folder(Gio.File.new_for_path(self._config.temp_directory))
+        def on_select_temp_folder(_file_dialog, result):
+            try:
+                selected_folder: Gio.File = _file_dialog.select_folder_finish(result)
+                selected_folder_path = selected_folder.get_path()
+                self._config.temp_directory = selected_folder_path
+                self.action_row_temp_directory.set_subtitle(selected_folder_path)
+            except GLib.Error as error:
+                if error.message == "Dismissed by user":
+                    logger.debug("FileDialog cancelled: Dismissed by user")
+                else:
+                    logger.error(f"Error selecting folder: {error.message}")
+                    raise error
+        file_dialog.select_folder(callback=on_select_temp_folder)
+
+    def update_custom_command_visibility(self, action):
+        self.entry_row_post_export_custom_command.set_visible(action == "custom_command")
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def check_button_post_export_none_callback(self, check_button):
+        from lada.gui.config.config import PostExportAction
+        if check_button.get_active():
+            self._config.post_export_action = PostExportAction.NONE.value
+        self.update_custom_command_visibility(self._config.post_export_action)
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def check_button_post_export_shutdown_callback(self, check_button):
+        from lada.gui.config.config import PostExportAction
+        if check_button.get_active():
+            self._config.post_export_action = PostExportAction.SHUTDOWN.value
+        self.update_custom_command_visibility(self._config.post_export_action)
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def check_button_post_export_custom_command_callback(self, check_button):
+        from lada.gui.config.config import PostExportAction
+        if check_button.get_active():
+            self._config.post_export_action = PostExportAction.CUSTOM_COMMAND.value
+        else:
+            self._config.post_export_action = PostExportAction.NONE.value
+        self.update_custom_command_visibility(self._config.post_export_action)
+
+    @Gtk.Template.Callback()
+    @skip_if_uninitialized
+    def entry_row_post_export_custom_command_changed_callback(self, entry_row):
+        self._config.post_export_custom_command = self.entry_row_post_export_custom_command.get_text()

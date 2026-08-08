@@ -45,6 +45,14 @@ For more information about additional options, use the `--help` argument.
 > Lada writes the restored video to a temporary file before combining it with the audio stream from the original file and saving it to the selected destination.
 > You can overwrite [the default location](https://docs.python.org/3/library/tempfile.html#tempfile.gettempdir) by setting the `TMPDIR` environment variable to another location of you choice.
 
+New: Temporary directory & frame-rate options
+-------------------------------------------
+
+- The GUI exposes a Temporary directory preference (Preferences → Export) which overrides the system temp for GUI exports.
+- The CLI accepts `--temp-dir` and `--frame-rate-mode` (`auto`, `cfr`, `vfr`) for parity with the GUI. When `cfr` is chosen, ffmpeg is called with `-vsync cfr` during the final combine step to preserve a constant frame rate in the output container.
+ - Lada now supports MPEG-TS output containers (`.ts`, `.mpeg`, `.mpg`) for watch/export flows where applicable. The combine step and codec compatibility checks were extended to recognize `mpegts` as a valid output container.
+
+
 ## Restoration options
 
 Lada utilizes specialized models for the two main steps of the processing pipeline: Detection and Restoration. You can choose different models for each task.
@@ -142,6 +150,11 @@ docker pull ladaapp/lada:latest
 > docker run --rm --gpus all --mount type=bind,src=<input video path>,dst=/mnt ladaapp/lada:latest --input "/mnt/<input video file>"
 > ```
 
+> [!TIP]
+> If you want to use hardware encoders like `hevc_nvenc` you have to provide the container with `video` capability.
+> 
+> With docker run you can use `--gpus 'all,"capabilities=compute,video"'`. Learn more [here](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/docker-specialized.html).
+
 ### Using Windows
 
 For Windows users, the app (CLI and GUI) is packaged as a standalone .7z archive file.
@@ -189,6 +202,10 @@ For instructions on training your own models and datasets, refer to [Training an
 
 If you want to help translating the app you can contribute to existing translations or set up a new language over at [Codeberg Translate](https://translate.codeberg.org/projects/lada/lada/).
 
+## License
+
+Source code and models are licensed under AGPL-3.0. See the [LICENSE.md](LICENSE.md) file for full details.
+
 ## Acknowledgement
 This project builds upon work done by these fantastic individuals and projects:
 
@@ -200,4 +217,6 @@ This project builds upon work done by these fantastic individuals and projects:
 * [NudeNet](https://github.com/notAI-tech/NudeNet/): Used as an additional NSFW classifier to filter out false positives by our own NSFW segmentation model
 * [Twitter Emoji](https://github.com/twitter/twemoji): Provided eggplant emoji as base for the app icon.
 * [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN): Used their image degradation model design for our mosaic detection model degradation pipeline.
+* [BPJDet](https://github.com/hnuzhy/BPJDet): Model for detecting human body and head. Used for creating SFW mosaics so that mosaic detection model can be trained so skip such material. 
+* [CenterFace](https://github.com/Star-Clouds/CenterFace): Model for detecting human faces. Used for creating SFW mosaics so that mosaic detection model can be trained so skip such material. 
 * PyTorch, FFmpeg, GStreamer, GTK and [all other folks building our ecosystem](https://xkcd.com/2347/)

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Lada Authors
+# SPDX-License-Identifier: AGPL-3.0
+
 import logging
 import pathlib
 import threading
@@ -57,6 +60,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.connect("close-request", self.close)
         self.file_selection_view.connect("files-selected", lambda obj, files: self.on_files_selected(files))
         self.preview_view.connect("toggle-fullscreen-requested", lambda *args: self.on_toggle_fullscreen())
+        # handle requests from preview view to resize window to native video resolution
+        self.preview_view.connect("request-native-resize", lambda obj, paintable, playback_controls, header_bar: self.on_window_resize_requested(obj, paintable, playback_controls, header_bar))
         self.preview_view.connect("window-resize-requested", self.on_window_resize_requested)
         self.connect("notify::fullscreened", lambda object, spec: self.on_fullscreened(object.get_property(spec.name)))
 
@@ -109,9 +114,10 @@ class MainWindow(Adw.ApplicationWindow):
         self.export_view.close()
 
     def _resize_window(self, paintable: Gdk.Paintable, playback_controls: Gtk.Widget, headerbar: Gtk.Widget, initial: bool | None = False) -> None:
-        # Copied from https://gitlab.gnome.org/GNOME/showtime/-/blob/3c940ff2a4128a50c559985a04fb6beb7e9292e6/showtime/widgets/window.py
-        # SPDX-License-Identifier: GPL-3.0-or-later
+        # SPDX-SnippetBegin
+        # SPDX-License-Identifier: GPL-3.0-or-later AND AGPL-3.0
         # SPDX-FileCopyrightText: Copyright 2024-2025 kramo
+        # Code vendored from: https://gitlab.gnome.org/GNOME/showtime/-/blob/3c940ff2a4128a50c559985a04fb6beb7e9292e6/showtime/widgets/window.py
 
         # For large enough monitors, occupy 40% of the screen area
         # when opening a window with a video
@@ -218,3 +224,5 @@ class MainWindow(Adw.ApplicationWindow):
             anim.props.easing = Adw.Easing.EASE_OUT_EXPO
             (anim.skip if initial else anim.play)()
             logger.debug("Resized window to %ix%i", nat_width, nat_height)
+
+        # SPDX-SnippetEnd
